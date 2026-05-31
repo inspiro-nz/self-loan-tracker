@@ -523,6 +523,57 @@ function App(){
                 </div>
               </div>
             )}
+
+            {/* Sharesies referral card */}
+            <a href="https://www.sharesies.nz/referrals?token=eyJhbGciOiAiQTI1NktXIiwgImVuYyI6ICJBMjU2R0NNIn0.JtuPhNOGOpuzja1GEn0bPj7OLHgE6pMN5n6WXiTq4DWzrkYM8SM3ZQ.6h4X_9JWDAlv3zWV.XdORU6PfIQHTQzIBWCXCm4jndiqixDWyhZGH_8uYzSgjpHIlRZLyHW3dRVEZudAnCgPj0Gg55oWHWiP1snZr5FngUQSQGYxJN9-SAqNdSsMfaqvH2SpzDZ_LVrVZFtpUn-_qX0b2PRvVMz6m003dy6-txYyyMSdSu7OySl-OMH--KHeOTjOg-8HZEbSJMY4849S0i028TKHyLa2cjgiLHvhOb2h3PvUoWdU.9aMzxCzOGk1pH049R0ASuA"
+              target="_blank" rel="noopener noreferrer"
+              style={{display:"block",marginTop:16,textDecoration:"none"}}>
+              <div style={{
+                background:"linear-gradient(135deg,#1a0d12,#160c18)",
+                border:"1px solid #EF496F44",
+                borderRadius:10,
+                padding:"14px 18px",
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"space-between",
+                gap:12,
+                flexWrap:"wrap",
+                transition:"border-color 0.2s",
+              }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#EF496F99"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor="#EF496F44"}
+              >
+                <div style={{display:"flex",alignItems:"center",gap:14}}>
+                  {/* Sharesies S mark */}
+                  <div style={{
+                    width:36,height:36,borderRadius:8,
+                    background:"#EF496F",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    flexShrink:0,
+                  }}>
+                    <span style={{color:"#fff",fontSize:18,fontWeight:700,fontFamily:"'Libre Baskerville',Georgia,serif",lineHeight:1}}>S</span>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:"#f0e0e6",fontWeight:400,marginBottom:2}}>
+                      New to Sharesies?
+                    </div>
+                    <div style={{fontSize:11,color:"#8a5060"}}>
+                      Sign up with my link — we both get a bonus reward
+                    </div>
+                  </div>
+                </div>
+                <div style={{
+                  fontSize:11,color:"#EF496F",
+                  border:"1px solid #EF496F55",
+                  borderRadius:6,
+                  padding:"5px 12px",
+                  whiteSpace:"nowrap",
+                  flexShrink:0,
+                }}>
+                  Get started →
+                </div>
+              </div>
+            </a>
           </div>
         )}
 
@@ -832,7 +883,12 @@ function App(){
       </div>
 
       <div style={{borderTop:"1px solid #1a1a2e",padding:"16px 24px",textAlign:"center"}}>
-        <p style={{fontSize:11,color:"#2a2a40"}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice</p>
+        <p style={{fontSize:11,color:"#2a2a40",marginBottom:6}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice</p>
+        <a href="https://www.sharesies.nz/referrals?token=eyJhbGciOiAiQTI1NktXIiwgImVuYyI6ICJBMjU2R0NNIn0.JtuPhNOGOpuzja1GEn0bPj7OLHgE6pMN5n6WXiTq4DWzrkYM8SM3ZQ.6h4X_9JWDAlv3zWV.XdORU6PfIQHTQzIBWCXCm4jndiqixDWyhZGH_8uYzSgjpHIlRZLyHW3dRVEZudAnCgPj0Gg55oWHWiP1snZr5FngUQSQGYxJN9-SAqNdSsMfaqvH2SpzDZ_LVrVZFtpUn-_qX0b2PRvVMz6m003dy6-txYyyMSdSu7OySl-OMH--KHeOTjOg-8HZEbSJMY4849S0i028TKHyLa2cjgiLHvhOb2h3PvUoWdU.9aMzxCzOGk1pH049R0ASuA"
+          target="_blank" rel="noopener noreferrer"
+          style={{fontSize:11,color:"#EF496F",textDecoration:"none",opacity:0.7}}>
+          New to Sharesies? Sign up and we both get a bonus ↗
+        </a>
       </div>
     </div>
   );
