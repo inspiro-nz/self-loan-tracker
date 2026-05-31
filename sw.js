@@ -8,18 +8,13 @@ const CACHE_NAME = "slt-v3";
 
 // App shell — everything needed to run offline
 const APP_SHELL = [
-  "/self-loan-tracker/",
-  "/self-loan-tracker/index.html",
-  "/self-loan-tracker/manifest.json",
-  "/self-loan-tracker/icon-192.png",
-  "/self-loan-tracker/icon-512.png",
-  "/self-loan-tracker/bmc_qr.png",
-  "/self-loan-tracker/inspiro-logo.png",
-
-  // CDN dependencies (cached on first load)
-  "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
-  "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
-  "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js",
+  "./",
+  "index.html",
+  "manifest.json",
+  "icon-192.png",
+  "icon-512.png",
+  "bmc_qr.png",
+  "inspiro-logo.png",
 ];
 
 // Domains that must ALWAYS go to the network (no caching)
@@ -27,6 +22,8 @@ const NETWORK_ONLY_HOSTS = [
   "www.alphavantage.co",
   "fonts.googleapis.com",
   "fonts.gstatic.com",
+  // CDN scripts (React, Babel, etc.) should always be fetched from network
+  "cdnjs.cloudflare.com",
 ];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────────
@@ -92,7 +89,7 @@ self.addEventListener("fetch", (event) => {
         .catch(() => {
           // Offline fallback: return index.html for navigation requests
           if (event.request.mode === "navigate") {
-            return caches.match("/self-loan-tracker/index.html");
+            return caches.match("index.html");
           }
         });
     })
