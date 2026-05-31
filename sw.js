@@ -4,7 +4,7 @@
    Network-only for: Alpha Vantage API + Google Fonts.
    ============================================================ */
 
-const CACHE_NAME = "slt-v2";
+const CACHE_NAME = "slt-v3";
 
 // App shell — everything needed to run offline
 const APP_SHELL = [
@@ -14,6 +14,7 @@ const APP_SHELL = [
   "/self-loan-tracker/icon-192.png",
   "/self-loan-tracker/icon-512.png",
   "/self-loan-tracker/bmc_qr.png",
+  "/self-loan-tracker/inspiro-logo.png",
 
   // CDN dependencies (cached on first load)
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",

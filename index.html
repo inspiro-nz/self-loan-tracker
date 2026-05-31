@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Self-Loan Tracker · Kernel S&P 500</title>
+<title>Self-Loan Tracker · Inspiro Analytics</title>
 
 <!-- ── PWA meta ─────────────────────────────────────────────────────────── -->
 <meta name="theme-color" content="#12122a">
@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SelfLoan">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="description" content="Track Kernel S&P 500 drawdowns and repayments against live market performance">
+<meta name="description" content="Track S&P 500 drawdowns and repayments against live market performance">
 
 <!-- ── PWA manifest & icons ─────────────────────────────────────────────── -->
 <link rel="manifest" href="manifest.json">
@@ -73,7 +73,7 @@ const DEFAULT = {
   months: 24,
   sp500Baseline: null,
   priceHistory: [],
-  drawdowns: [],   // [{id, date, amount, note}]  — money taken OUT of Kernel
+  drawdowns: [],   // [{id, date, amount, note}]  — money taken OUT of Sharesies
   repayments: [],  // [{id, date, amount}]          — money paid BACK in
 };
 
@@ -298,7 +298,7 @@ function App(){
   const addDrawdown=()=>{
     const amt=parseFloat(ddAmt);
     if(!amt||amt<=0) return;
-    const sorted=[...(state.drawdowns||[]),{id:Date.now(),date:ddDate,amount:amt,note:ddNote.trim()||"Kernel withdrawal"}]
+    const sorted=[...(state.drawdowns||[]),{id:Date.now(),date:ddDate,amount:amt,note:ddNote.trim()||"Sharesies withdrawal"}]
       .sort((a,b)=>a.date.localeCompare(b.date));
     upd({drawdowns:sorted});
     setDdAmt("");setDdNote("");
@@ -336,7 +336,10 @@ function App(){
       <div style={{background:"linear-gradient(135deg,#12122a,#1c1a2e)",borderBottom:"1px solid #2a2a4a",padding:"30px 24px 22px"}}>
         <div style={{maxWidth:760,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
           <div>
-            <div style={{fontSize:10,letterSpacing:"0.25em",color:"#c9a84c",textTransform:"uppercase",marginBottom:8}}>Kernel · S&P 500</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <img src="inspiro-logo.png" alt="Inspiro Analytics" style={{height:36,width:36,borderRadius:6,objectFit:"cover"}}/>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Inspiro Analytics</div>
+            </div>
             <h1 style={{fontSize:26,fontWeight:400,color:"#f0e8d8"}}>Self-Loan Tracker</h1>
             <p style={{marginTop:6,fontSize:13,color:"#6668aa"}}>Track drawdowns and repayments against live market performance</p>
           </div>
@@ -584,7 +587,7 @@ function App(){
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:6}}>Portfolio vs Repayments Over Time</div>
                 <p style={{fontSize:12,color:"#666688",lineHeight:1.6}}>
-                  Gold = what your total withdrawals would be worth if left in Kernel each week. Blue dashed = cumulative repayments. When blue meets gold, you've broken even.
+                  Gold = what your total withdrawals would be worth if left in Sharesies each week. Blue dashed = cumulative repayments. When blue meets gold, you've broken even.
                 </p>
               </div>
               <LineChart history={(state.priceHistory||[]).filter(h=>h.portfolioValue>0)} loanAmount={totalDrawn+totalFuture}/>
@@ -640,7 +643,7 @@ function App(){
             {ledgerTab==="drawdowns"&&(
               <div>
                 <div style={{background:"#1a1a2e",border:"1px solid #e0606033",borderRadius:12,padding:20,marginBottom:16}}>
-                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#e06060",textTransform:"uppercase",marginBottom:14}}>Log a Drawdown — Money Out of Kernel</div>
+                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#e06060",textTransform:"uppercase",marginBottom:14}}>Log a Drawdown — Money Out of Sharesies</div>
                   <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
                     <div style={{flex:1,minWidth:120,position:"relative"}}>
                       <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#666",fontSize:14}}>$</span>
@@ -717,7 +720,7 @@ function App(){
             {ledgerTab==="repayments"&&(
               <div>
                 <div style={{background:"#1a1a2e",border:"1px solid #60c08033",borderRadius:12,padding:20,marginBottom:16}}>
-                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#60c080",textTransform:"uppercase",marginBottom:14}}>Log a Repayment — Money Back to Kernel</div>
+                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#60c080",textTransform:"uppercase",marginBottom:14}}>Log a Repayment — Money Back to Sharesies</div>
                   <div style={{marginBottom:10,fontSize:12,color:"#444460"}}>
                     Break-even amount: <span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{fmt(pmt)}/month</span>
                     {totalDrawn<=0&&<span style={{color:"#555570"}}> — add a drawdown first</span>}
@@ -785,7 +788,7 @@ function App(){
             <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
               <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:22}}>Loan Configuration</div>
               {[
-                {label:"Target Annual Return %",  key:"annualReturn",type:"number",note:"Kernel's expected return — charge yourself this rate to break even"},
+                {label:"Target Annual Return %",  key:"annualReturn",type:"number",note:"Sharesies expected return — charge yourself this rate to break even"},
                 {label:"Repayment Term (months)", key:"months",      type:"number",note:"How many months to repay over — break-even payment recalculates automatically"},
               ].map(({label,key,type,note})=>(
                 <div key={key} style={{marginBottom:22}}>
