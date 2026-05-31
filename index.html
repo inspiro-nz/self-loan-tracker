@@ -882,13 +882,47 @@ function App(){
         )}
       </div>
 
-      <div style={{borderTop:"1px solid #1a1a2e",padding:"16px 24px",textAlign:"center"}}>
-        <p style={{fontSize:11,color:"#2a2a40",marginBottom:6}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice</p>
-        <a href="https://www.sharesies.nz/referrals?token=eyJhbGciOiAiQTI1NktXIiwgImVuYyI6ICJBMjU2R0NNIn0.JtuPhNOGOpuzja1GEn0bPj7OLHgE6pMN5n6WXiTq4DWzrkYM8SM3ZQ.6h4X_9JWDAlv3zWV.XdORU6PfIQHTQzIBWCXCm4jndiqixDWyhZGH_8uYzSgjpHIlRZLyHW3dRVEZudAnCgPj0Gg55oWHWiP1snZr5FngUQSQGYxJN9-SAqNdSsMfaqvH2SpzDZ_LVrVZFtpUn-_qX0b2PRvVMz6m003dy6-txYyyMSdSu7OySl-OMH--KHeOTjOg-8HZEbSJMY4849S0i028TKHyLa2cjgiLHvhOb2h3PvUoWdU.9aMzxCzOGk1pH049R0ASuA"
-          target="_blank" rel="noopener noreferrer"
-          style={{fontSize:11,color:"#EF496F",textDecoration:"none",opacity:0.7}}>
-          New to Sharesies? Sign up and we both get a bonus ↗
-        </a>
+      <div style={{borderTop:"1px solid #1a1a2e",padding:"20px 24px 24px",textAlign:"center"}}>
+
+        {/* Sharesies + BMC row */}
+        <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:24,flexWrap:"wrap",marginBottom:14}}>
+
+          {/* Sharesies referral */}
+          <a href="https://www.sharesies.nz/referrals?token=eyJhbGciOiAiQTI1NktXIiwgImVuYyI6ICJBMjU2R0NNIn0.JtuPhNOGOpuzja1GEn0bPj7OLHgE6pMN5n6WXiTq4DWzrkYM8SM3ZQ.6h4X_9JWDAlv3zWV.XdORU6PfIQHTQzIBWCXCm4jndiqixDWyhZGH_8uYzSgjpHIlRZLyHW3dRVEZudAnCgPj0Gg55oWHWiP1snZr5FngUQSQGYxJN9-SAqNdSsMfaqvH2SpzDZ_LVrVZFtpUn-_qX0b2PRvVMz6m003dy6-txYyyMSdSu7OySl-OMH--KHeOTjOg-8HZEbSJMY4849S0i028TKHyLa2cjgiLHvhOb2h3PvUoWdU.9aMzxCzOGk1pH049R0ASuA"
+            target="_blank" rel="noopener noreferrer"
+            style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:11,color:"#EF496F",textDecoration:"none",opacity:0.75,transition:"opacity 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.opacity=1}
+            onMouseLeave={e=>e.currentTarget.style.opacity=0.75}>
+            <span style={{width:16,height:16,borderRadius:4,background:"#EF496F",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#fff",flexShrink:0}}>S</span>
+            New to Sharesies? Sign up &amp; we both get a bonus ↗
+          </a>
+
+          <span style={{color:"#2a2a40",fontSize:11}}>·</span>
+
+          {/* Buy Me a Coffee */}
+          <div style={{display:"inline-flex",alignItems:"center",gap:10}}>
+            <a href="https://buymeacoffee.com/inspiro"
+              target="_blank" rel="noopener noreferrer"
+              style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:11,color:"#FFDD00",textDecoration:"none",opacity:0.75,transition:"opacity 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.opacity=1}
+              onMouseLeave={e=>e.currentTarget.style.opacity=0.75}>
+              <span style={{width:16,height:16,borderRadius:4,background:"#FFDD00",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,flexShrink:0}}>☕</span>
+              Buy me a coffee ↗
+            </a>
+            {/* QR code — useful on desktop so visitors can scan with phone */}
+            <a href="https://buymeacoffee.com/inspiro" target="_blank" rel="noopener noreferrer"
+              title="Scan to buy a coffee"
+              style={{display:"inline-block",lineHeight:0,opacity:0.55,transition:"opacity 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.opacity=1}
+              onMouseLeave={e=>e.currentTarget.style.opacity=0.55}>
+              <img src="bmc_qr.png" alt="Buy me a coffee QR code"
+                style={{width:44,height:44,borderRadius:4,display:"block"}}/>
+            </a>
+          </div>
+
+        </div>
+
+        <p style={{fontSize:10,color:"#222238"}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice</p>
       </div>
     </div>
   );
