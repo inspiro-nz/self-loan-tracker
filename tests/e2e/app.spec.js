@@ -1,8 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-// Wait for the React app to finish rendering (Babel compiles at runtime)
+// Wait for React/Babel to compile and render into #root.
+// Babel standalone can take a few seconds on first load.
 async function waitForApp(page) {
-  await page.waitForSelector('h1', { timeout: 15000 });
+  await page.waitForFunction(
+    () => {
+      const root = document.getElementById('root');
+      return root && root.children.length > 0;
+    },
+    { timeout: 20000 }
+  );
 }
 
 // Clear localStorage before each test so tests are isolated
