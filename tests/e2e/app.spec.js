@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { APP_URL } from '../../playwright.config.js';
 
 // Pre-read CDN files at module load time so any missing-file error is
 // immediately obvious and route handlers don't do async disk I/O.
@@ -55,13 +56,14 @@ async function setupPage(page) {
   }
 }
 
-// Clear localStorage before each test so tests are isolated
+// Clear localStorage before each test so tests are isolated.
+// Using file:// URL — no web server required.
 test.beforeEach(async ({ page }) => {
   await setupPage(page);
-  await page.goto('/');
+  await page.goto(APP_URL);
   await waitForApp(page);
   await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await page.goto(APP_URL);   // reload: re-navigate to same file URL
   await waitForApp(page);
 });
 

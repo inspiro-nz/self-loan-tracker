@@ -1,4 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
+import { join } from 'path';
+
+// Absolute path to index.html — used as the app URL in tests.
+// Loading via file:// eliminates all web server dependencies (no port
+// conflicts, no server startup failures, no IPv4/IPv6 binding issues).
+export const APP_URL = `file://${join(process.cwd(), 'index.html')}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -9,20 +15,20 @@ export default defineConfig({
   reporter: [['html', { open: 'never' }], ['list']],
   timeout: 30000,
   use: {
-    baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          // Allow file:// pages to load sibling files (icons, sw.js, etc.)
+          args: ['--allow-file-access-from-files'],
+        },
+      },
+    },
   ],
-  webServer: {
-    // Bind to all interfaces (0.0.0.0) so both 127.0.0.1 and ::1 work.
-    // python3 is always available on Ubuntu CI runners.
-    command: 'python3 -m http.server 4173',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 30000,
-  },
 });
