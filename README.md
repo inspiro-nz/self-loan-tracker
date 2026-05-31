@@ -92,12 +92,6 @@ If the market grows faster than your repayment rate, the gap widens. You need to
 
 ---
 
-## Screenshots
-
-*Add screenshots here once you have the tool deployed.*
-
----
-
 ## Roadmap
 
 - [ ] Multiple benchmark support (compare against different indices)
