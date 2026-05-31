@@ -686,13 +686,13 @@ function App(){
   };
 
   // ── Core maths ──────────────────────────────────────────────────────────────
-  const todayStr = useMemo(()=>today(),[]);
+  const todayStr = today();
   const activeDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date<=todayStr),[state.drawdowns,todayStr]);
   const futureDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date>todayStr),[state.drawdowns,todayStr]);
   const totalDrawn    = useMemo(()=>activeDrawdowns.reduce((s,d)=>s+d.amount,0),[activeDrawdowns]);
   const totalFuture   = useMemo(()=>futureDrawdowns.reduce((s,d)=>s+d.amount,0),[futureDrawdowns]);
   const totalRepaid   = useMemo(()=>(state.repayments||[]).reduce((s,r)=>s+r.amount,0),[state.repayments]);
-  const outstanding   = Math.max(totalDrawn - totalRepaid, 0);
+  const outstanding   = totalDrawn - totalRepaid;
 
   const r   = Math.pow(1+state.annualReturn/100,1/12)-1;
   const pmt = useMemo(()=>{
@@ -720,6 +720,7 @@ function App(){
   // ── Market fetch ────────────────────────────────────────────────────────────
   const fetchMarket=async()=>{
     if(!avKey){setShowSetup(true);return;}
+    if(loading) return;
     setLoading(true);setError("");
     try{
       const parsed=await fetchAlphaVantage(avKey);
@@ -851,7 +852,7 @@ function App(){
               {[
                 {label:"Active Drawdowns",  value:totalDrawn>0?fmt(totalDrawn):"—",   sub:`${activeDrawdowns.length} in effect today`,                                            color:"#e06060"},
                 {label:"Total Repaid",      value:fmt(totalRepaid),  sub:`${(state.repayments||[]).length} payment${(state.repayments||[]).length!==1?"s":""}`,  color:"#60c080"},
-                {label:"Outstanding",       value:totalDrawn>0?fmt(outstanding):"—",  sub:totalDrawn>0?`${((outstanding/totalDrawn)*100).toFixed(1)}% of active drawn`:"No active drawdowns yet", color:"#c9a84c"},
+                {label:"Outstanding",       value:totalDrawn>0?fmt(Math.abs(outstanding)):"—",  sub:totalDrawn>0?(outstanding<0?`✓ ${((-outstanding/totalDrawn)*100).toFixed(1)}% over-repaid`:`${((outstanding/totalDrawn)*100).toFixed(1)}% of active drawn`):"No active drawdowns yet", color:outstanding<0?"#60c080":"#c9a84c"},
                 {label:"Break-Even Monthly",value:totalDrawn>0?fmt(pmt):"—",  sub:totalDrawn>0?`at ${state.annualReturn}% p.a.`:"Increases as drawdowns activate",       color:"#8898cc"},
               ].map(({label,value,sub,color})=>(
                 <div key={label} style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"14px 12px"}}>
@@ -990,7 +991,7 @@ function App(){
               <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:18}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:10,fontSize:12,color:"#8888aa"}}>
                   <span>Repayment Progress <span style={{color:"#444460",fontSize:10}}>(active drawdowns only)</span></span>
-                  <span style={{fontFamily:"'DM Mono',monospace",fontWeight:300}}>{totalDrawn>0?`${Math.min((totalRepaid/totalDrawn)*100,100).toFixed(1)}% paid off`:"0% — awaiting first drawdown"}</span>
+                  <span style={{fontFamily:"'DM Mono',monospace",fontWeight:300}}>{totalDrawn>0?`${((totalRepaid/totalDrawn)*100).toFixed(1)}% paid off`:"0% — awaiting first drawdown"}</span>
                 </div>
                 <div style={{background:"#111118",borderRadius:4,height:6,overflow:"hidden"}}>
                   <div style={{height:"100%",borderRadius:4,transition:"width 0.5s ease",width:totalDrawn>0?`${Math.min((totalRepaid/totalDrawn)*100,100)}%`:"0%",background:"linear-gradient(90deg,#8898cc,#60c080)"}}/>

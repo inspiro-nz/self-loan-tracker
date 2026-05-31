@@ -1,7 +1,7 @@
 {
   "name": "Self-Loan Tracker",
   "short_name": "SelfLoan",
-  "description": "Track Kernel S&P 500 drawdowns and repayments against live market performance",
+  "description": "Track index fund drawdowns and repayments against live market performance",
   "start_url": "/self-loan-tracker/",
   "scope": "/self-loan-tracker/",
   "display": "standalone",
