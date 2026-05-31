@@ -1,10 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import { join } from 'path';
-
-// Absolute path to index.html — used as the app URL in tests.
-// Loading via file:// eliminates all web server dependencies (no port
-// conflicts, no server startup failures, no IPv4/IPv6 binding issues).
-export const APP_URL = `file://${join(process.cwd(), 'index.html')}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -15,20 +9,19 @@ export default defineConfig({
   reporter: [['html', { open: 'never' }], ['list']],
   timeout: 30000,
   use: {
+    baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
   projects: [
-    {
-      name: 'chromium',
-      use: {
-        ...devices['Desktop Chrome'],
-        launchOptions: {
-          // Allow file:// pages to load sibling files (icons, sw.js, etc.)
-          args: ['--allow-file-access-from-files'],
-        },
-      },
-    },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
+  webServer: {
+    // Pure Node.js server — no external deps, explicit 127.0.0.1 binding.
+    command: 'node tests/e2e/server.cjs',
+    url: 'http://127.0.0.1:4173',
+    reuseExistingServer: !process.env.CI,
+    timeout: 15000,
+  },
 });
