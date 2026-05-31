@@ -9,7 +9,7 @@ export default defineConfig({
   reporter: [['html', { open: 'never' }], ['list']],
   timeout: 30000,
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -18,12 +18,11 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    // python3 is always available on Ubuntu CI runners
-    command: 'python3 -m http.server 4173 --bind 127.0.0.1',
-    url: 'http://localhost:4173',
+    // Bind to all interfaces (0.0.0.0) so both 127.0.0.1 and ::1 work.
+    // python3 is always available on Ubuntu CI runners.
+    command: 'python3 -m http.server 4173',
+    url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
-    stdout: 'pipe',
-    stderr: 'pipe',
   },
 });
