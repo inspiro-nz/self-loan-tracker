@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Self-Loan Tracker · Inspiro Analytics</title>
+<title>Self-Loan Tracker · Inspiro</title>
 
 <!-- ── PWA meta ─────────────────────────────────────────────────────────── -->
 <meta name="theme-color" content="#12122a">
@@ -56,7 +56,7 @@
 </script>
 
 <script type="text/babel">
-const { useState, useMemo, useRef } = React;
+const { useState, useMemo, useRef, useEffect } = React;
 
 // STABLE — never change between versions; user data persists automatically
 const STORAGE_KEY  = "slt-loan-tracker";
@@ -72,7 +72,7 @@ const DEFAULT = {
   annualReturn: 8,
   months: 24,
   sp500Baseline: null,
-  priceHistory: [],
+  priceHistory: [],   // price snapshots, max 104 — one per calendar day
   drawdowns: [],   // [{id, date, amount, note}]  — money taken OUT of Sharesies
   repayments: [],  // [{id, date, amount}]          — money paid BACK in
 };
@@ -90,7 +90,21 @@ function load(key,def){
     return def;
   }catch{return def;}
 }
-function save(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{}}
+function save(key,val){
+  try{localStorage.setItem(key,JSON.stringify(val));}
+  catch(e){
+    console.warn('[SLT] localStorage save failed — storage may be full:',e.message);
+    if(!document.getElementById('slt-quota-warn')){
+      const d=document.createElement('div');d.id='slt-quota-warn';
+      Object.assign(d.style,{position:'fixed',top:'8px',left:'50%',transform:'translateX(-50%)',
+        background:'#1a0e10',border:'1px solid #e0606088',color:'#e06060',
+        padding:'10px 20px',borderRadius:'8px',fontSize:'12px',zIndex:'9999',
+        fontFamily:"'Libre Baskerville',Georgia,serif",boxShadow:'0 4px 20px #00000066'});
+      d.textContent='⚠ Data could not be saved — storage may be full. Export a backup now.';
+      document.body.appendChild(d);setTimeout(()=>d.remove(),8000);
+    }
+  }
+}
 
 // ── Alpha Vantage ─────────────────────────────────────────────────────────────
 async function fetchAlphaVantage(apiKey){
@@ -110,9 +124,9 @@ async function fetchAlphaVantage(apiKey){
   const ytdStart=dates.filter(d=>d.startsWith(thisYear)).pop()||dates[dates.length-1];
   return{
     price,
-    changeToday:((price-gc(dates[1]))/gc(dates[1]))*100,
-    change1W:   ((price-gc(dates[Math.min(5,dates.length-1)]))/gc(dates[Math.min(5,dates.length-1)]))*100,
-    change1M:   ((price-gc(dates[Math.min(22,dates.length-1)]))/gc(dates[Math.min(22,dates.length-1)]))*100,
+    changeToday: dates.length>1  ? ((price-gc(dates[1]))/gc(dates[1]))*100 : null,
+    change1W:    dates.length>5  ? ((price-gc(dates[Math.min(5,dates.length-1)]))/gc(dates[Math.min(5,dates.length-1)]))*100 : null,
+    change1M:    dates.length>22 ? ((price-gc(dates[Math.min(22,dates.length-1)]))/gc(dates[Math.min(22,dates.length-1)]))*100 : null,
     changeYTD:  ((price-gc(ytdStart))/gc(ytdStart))*100,
     lastUpdated:new Date(dates[0]).toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"}),
     source:"Alpha Vantage (SPY)"
@@ -123,6 +137,14 @@ async function fetchAlphaVantage(apiKey){
 function LineChart({history,loanAmount}){
   const [tip,setTip]=useState(null);
   const svgRef=useRef(null);
+  const rectRef=useRef(null);
+  // R-15: cache bounding rect — avoids layout reflow on every mousemove
+  useEffect(()=>{
+    const update=()=>{if(svgRef.current) rectRef.current=svgRef.current.getBoundingClientRect();};
+    update();
+    window.addEventListener('resize',update);
+    return()=>window.removeEventListener('resize',update);
+  },[history]);
   if(!history||history.length<2) return(
     <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",color:"#444460",fontSize:13}}>
       Chart appears after 2+ market refreshes
@@ -141,7 +163,7 @@ function LineChart({history,loanAmount}){
   const fK=v=>v>=1000?`$${(v/1000).toFixed(1)}k`:`$${v.toFixed(0)}`;
   const onMove=e=>{
     const svg=svgRef.current; if(!svg) return;
-    const rect=svg.getBoundingClientRect();
+    const rect=rectRef.current||svg.getBoundingClientRect();
     const x=(e.clientX-rect.left)*(W/rect.width)-PL;
     const idx=Math.max(0,Math.min(history.length-1,Math.round((x/iW)*(history.length-1))));
     const svgW=rect.width;
@@ -237,7 +259,7 @@ function App(){
   };
 
   // ── Core maths ──────────────────────────────────────────────────────────────
-  const todayStr = useMemo(()=>today(),[]);
+  const todayStr = useMemo(()=>today(),[]);  // computed once at page-load; reload to advance the date past midnight
   const activeDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date<=todayStr),[state.drawdowns,todayStr]);
   const futureDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date>todayStr),[state.drawdowns,todayStr]);
   const totalDrawn    = useMemo(()=>activeDrawdowns.reduce((s,d)=>s+d.amount,0),[activeDrawdowns]);
@@ -262,7 +284,7 @@ function App(){
     const portfolioValue=totalDrawn*(spyPrice/baseline);
     const filtered=(state.priceHistory||[]).filter(h=>h.date!==today());
     return[...filtered,{date:today(),spyPrice,portfolioValue,cumulativePaid:repaidSoFar}]
-      .sort((a,b)=>a.date.localeCompare(b.date)).slice(-104);
+      .sort((a,b)=>a.date.localeCompare(b.date)).slice(-104); // max 104 daily snapshots (≈ 2 yrs if refreshed weekly)
   };
 
   // ── Market fetch ────────────────────────────────────────────────────────────
@@ -285,7 +307,7 @@ function App(){
 
   const applyManual=()=>{
     const p=parseFloat(manualPrice);
-    if(!p||p<=0) return;
+    if(!p||p<=0||p>100000){setManual("");return;} // R-11: reject absurd values that would corrupt baseline
     const baseline=state.sp500Baseline||p;
     setMarket({price:p,changeToday:null,change1W:null,change1M:null,changeYTD:null,changeFromBaseline:((p-baseline)/baseline)*100,lastUpdated:"Manual entry",source:"Manual"});
     const patch={};
@@ -337,8 +359,10 @@ function App(){
         <div style={{maxWidth:760,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
           <div>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-              <img src="inspiro-logo.png" alt="Inspiro Analytics" style={{height:36,width:36,borderRadius:6,objectFit:"cover"}}/>
-              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Inspiro Analytics</div>
+              <img src="inspiro-logo.png" alt="Inspiro"
+                style={{height:36,width:36,borderRadius:6,objectFit:"cover"}}
+                onError={e=>{e.currentTarget.style.display='none';}}/>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Inspiro</div>
             </div>
             <h1 style={{fontSize:26,fontWeight:400,color:"#f0e8d8"}}>Self-Loan Tracker</h1>
             <p style={{marginTop:6,fontSize:13,color:"#6668aa"}}>Track drawdowns and repayments against live market performance</p>
@@ -547,7 +571,6 @@ function App(){
                 onMouseLeave={e=>e.currentTarget.style.borderColor="#EF496F44"}
               >
                 <div style={{display:"flex",alignItems:"center",gap:14}}>
-                  {/* Sharesies S mark */}
                   <div style={{
                     width:36,height:36,borderRadius:8,
                     background:"#EF496F",
@@ -848,6 +871,9 @@ function App(){
                         if(!parsed.drawdowns||!parsed.repayments) throw new Error("Invalid backup — missing drawdowns or repayments fields");
                         if(window.confirm(`Import backup from ${parsed.exportedAt?.slice(0,10)||"unknown date"}?\n\nThis will replace all current data.`)){
                           const {exportedAt,version,...rest}=parsed;
+                          // R-06: guard against corrupted numeric settings in backup
+                          if(rest.annualReturn!=null&&(isNaN(rest.annualReturn)||rest.annualReturn<=0)) rest.annualReturn=DEFAULT.annualReturn;
+                          if(rest.months!=null&&(isNaN(rest.months)||rest.months<=0)) rest.months=DEFAULT.months;
                           if(rest.priceHistory) rest.priceHistory=rest.priceHistory.filter(h=>h.portfolioValue>0);
                           upd(rest);
                           setMarket(null);
@@ -912,7 +938,6 @@ function App(){
               <span style={{width:16,height:16,borderRadius:4,background:"#FFDD00",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,flexShrink:0}}>☕</span>
               Buy me a coffee ↗
             </a>
-            {/* QR code — useful on desktop so visitors can scan with phone */}
             <a href="https://buymeacoffee.com/inspiro" target="_blank" rel="noopener noreferrer"
               title="Scan to buy a coffee"
               style={{display:"inline-block",lineHeight:0,opacity:0.55,transition:"opacity 0.15s"}}
