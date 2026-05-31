@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Self-Loan Tracker · Kernel S&P 500</title>
+
+<!-- ── PWA meta ─────────────────────────────────────────────────────────── -->
+<meta name="theme-color" content="#12122a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SelfLoan">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Track Kernel S&P 500 drawdowns and repayments against live market performance">
+
+<!-- ── PWA manifest & icons ─────────────────────────────────────────────── -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+
+<!-- ── Fonts & React ────────────────────────────────────────────────────── -->
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0e0e16;color:#e8e0d0;font-family:'Libre Baskerville',Georgia,serif;}
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+  ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:#111118;}::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:3px;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:translateY(0);}}
+  .fade-in{animation:fadeIn 0.3s ease forwards;}
+  button{transition:opacity 0.15s;}button:hover:not(:disabled){opacity:0.85;}
+  .sub-tab{background:none;border:none;padding:8px 16px;cursor:pointer;font-size:12px;border-radius:6px;font-family:'Libre Baskerville',Georgia,serif;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- ── Service Worker registration ──────────────────────────────────────── -->
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("sw.js")
+        .then((reg) => {
+          console.log("[SLT] Service worker registered, scope:", reg.scope);
+        })
+        .catch((err) => {
+          console.warn("[SLT] Service worker registration failed:", err);
+        });
+    });
+  }
+</script>
+
+<script type="text/babel">
+const { useState, useMemo, useRef } = React;
+
+// STABLE — never change between versions; user data persists automatically
+const STORAGE_KEY  = "slt-loan-tracker";
+const AV_KEY_STORE = "slt-av-key";
+const LEGACY_KEYS  = ["slt-data-v6","slt-data-v5","slt-data-v4"];
+
+const fmt    = n => (isNaN(n)||n==null)?"—":n.toLocaleString("en-NZ",{style:"currency",currency:"NZD",maximumFractionDigits:2});
+const fmtPct = n => (isNaN(n)||n==null)?"—":`${n>=0?"+":""}${n.toFixed(2)}%`;
+const sc     = v => (v==null||isNaN(v))?"#888":v>=0?"#60c080":"#e06060";
+const today  = () => new Date().toISOString().slice(0,10);
+
+const DEFAULT = {
+  annualReturn: 8,
+  months: 24,
+  sp500Baseline: null,
+  priceHistory: [],
+  drawdowns: [],   // [{id, date, amount, note}]  — money taken OUT of Kernel
+  repayments: [],  // [{id, date, amount}]          — money paid BACK in
+};
+
+function load(key,def){
+  try{
+    const r=localStorage.getItem(key);
+    if(r) return JSON.parse(r);
+    for(const lk of LEGACY_KEYS){
+      const old=localStorage.getItem(lk);
+      if(old){ const p=JSON.parse(old);
+               if(p.priceHistory) p.priceHistory=p.priceHistory.filter(h=>h.portfolioValue>0);
+               localStorage.setItem(key,JSON.stringify(p)); localStorage.removeItem(lk); return p; }
+    }
+    return def;
+  }catch{return def;}
+}
+function save(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{}}
+
+// ── Alpha Vantage ─────────────────────────────────────────────────────────────
+async function fetchAlphaVantage(apiKey){
+  const url=`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&outputsize=compact&apikey=${apiKey}`;
+  const res=await fetch(url);
+  if(!res.ok) throw new Error(`HTTP ${res.status} from Alpha Vantage`);
+  const data=await res.json();
+  if(data["Note"])          throw new Error("Rate limit reached — free tier: 25 calls/day.");
+  if(data["Information"])   throw new Error(data["Information"]);
+  if(data["Error Message"]) throw new Error(data["Error Message"]);
+  const series=data["Time Series (Daily)"];
+  if(!series) throw new Error("Keys in response: "+Object.keys(data).join(", "));
+  const dates=Object.keys(series).sort((a,b)=>b.localeCompare(a));
+  const gc=d=>parseFloat(series[d]["4. close"]);
+  const price=gc(dates[0]);
+  const thisYear=new Date().getFullYear().toString();
+  const ytdStart=dates.filter(d=>d.startsWith(thisYear)).pop()||dates[dates.length-1];
+  return{
+    price,
+    changeToday:((price-gc(dates[1]))/gc(dates[1]))*100,
+    change1W:   ((price-gc(dates[Math.min(5,dates.length-1)]))/gc(dates[Math.min(5,dates.length-1)]))*100,
+    change1M:   ((price-gc(dates[Math.min(22,dates.length-1)]))/gc(dates[Math.min(22,dates.length-1)]))*100,
+    changeYTD:  ((price-gc(ytdStart))/gc(ytdStart))*100,
+    lastUpdated:new Date(dates[0]).toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"}),
+    source:"Alpha Vantage (SPY)"
+  };
+}
+
+// ── SVG Line Chart ─────────────────────────────────────────────────────────────
+function LineChart({history,loanAmount}){
+  const [tip,setTip]=useState(null);
+  const svgRef=useRef(null);
+  if(!history||history.length<2) return(
+    <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",color:"#444460",fontSize:13}}>
+      Chart appears after 2+ market refreshes
+    </div>
+  );
+  const W=680,H=220,PL=64,PR=20,PT=16,PB=36;
+  const iW=W-PL-PR,iH=H-PT-PB;
+  const allV=[...history.map(h=>h.portfolioValue),...history.map(h=>h.cumulativePaid),loanAmount];
+  const minV=Math.min(...allV)*0.97, maxV=Math.max(...allV)*1.03;
+  const xs=i=>PL+(i/(history.length-1))*iW;
+  const ys=v=>PT+iH-((v-minV)/(maxV-minV))*iH;
+  const line=(arr,color,dash)=>{
+    const d=arr.map((v,i)=>`${i===0?"M":"L"}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(" ");
+    return<path d={d} fill="none" stroke={color} strokeWidth="2" strokeDasharray={dash?"6,4":"none"} strokeLinecap="round" strokeLinejoin="round"/>;
+  };
+  const fK=v=>v>=1000?`$${(v/1000).toFixed(1)}k`:`$${v.toFixed(0)}`;
+  const onMove=e=>{
+    const svg=svgRef.current; if(!svg) return;
+    const rect=svg.getBoundingClientRect();
+    const x=(e.clientX-rect.left)*(W/rect.width)-PL;
+    const idx=Math.max(0,Math.min(history.length-1,Math.round((x/iW)*(history.length-1))));
+    const svgW=rect.width;
+    const tipLeft=xs(idx)/W*svgW;
+    const isRight=idx>history.length*0.6;
+    setTip({idx,tipLeft,svgW,isRight});
+  };
+  const t=tip?history[tip.idx]:null;
+  return(
+    <div style={{position:"relative"}}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",cursor:"crosshair"}}
+        onMouseMove={onMove} onMouseLeave={()=>setTip(null)}>
+        {[0,1,2,3,4].map(i=>{const v=minV+(i/4)*(maxV-minV);const y=ys(v);return<g key={i}>
+          <line x1={PL} y1={y} x2={W-PR} y2={y} stroke="#1e1e32" strokeWidth="1"/>
+          <text x={PL-6} y={y+4} textAnchor="end" fill="#444460" fontSize="10" fontFamily="'DM Mono',monospace">{fK(v)}</text>
+        </g>;})}
+        <line x1={PL} y1={ys(loanAmount)} x2={W-PR} y2={ys(loanAmount)} stroke="#333350" strokeWidth="1" strokeDasharray="4,4"/>
+        {line(history.map(h=>h.portfolioValue),"#c9a84c",false)}
+        {line(history.map(h=>h.cumulativePaid),"#8898cc",true)}
+        {history.map((h,i)=><g key={i}>
+          <circle cx={xs(i)} cy={ys(h.portfolioValue)} r="3" fill="#c9a84c"/>
+          <circle cx={xs(i)} cy={ys(h.cumulativePaid)} r="3" fill="#8898cc"/>
+        </g>)}
+        {history.map((h,i)=>{
+          if(history.length>8&&i%Math.ceil(history.length/6)!==0&&i!==history.length-1) return null;
+          return<text key={i} x={xs(i)} y={H-6} textAnchor="middle" fill="#444460" fontSize="9" fontFamily="'DM Mono',monospace">{h.date.slice(5)}</text>;
+        })}
+        {tip&&t&&<line x1={xs(tip.idx)} y1={PT} x2={xs(tip.idx)} y2={H-PB} stroke="#666688" strokeWidth="1" strokeDasharray="3,3"/>}
+      </svg>
+      {tip&&t&&(
+        <div style={{position:"absolute",top:4,
+          left:tip.isRight?undefined:tip.tipLeft+8,
+          right:tip.isRight?(tip.svgW-tip.tipLeft+8):undefined,
+          background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:8,padding:"10px 14px",fontSize:12,pointerEvents:"none",minWidth:160}}>
+          <div style={{color:"#666688",marginBottom:6,fontFamily:"'DM Mono',monospace",fontSize:10}}>{t.date}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+            <span style={{width:10,height:2,background:"#c9a84c",display:"inline-block"}}/>
+            <span style={{color:"#aaa8c0"}}>Portfolio</span>
+            <span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace",marginLeft:"auto"}}>{fmt(t.portfolioValue)}</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{width:10,height:2,background:"#8898cc",display:"inline-block"}}/>
+            <span style={{color:"#aaa8c0"}}>Repaid</span>
+            <span style={{color:"#8898cc",fontFamily:"'DM Mono',monospace",marginLeft:"auto"}}>{fmt(t.cumulativePaid)}</span>
+          </div>
+          <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #2a2a4a",fontSize:11,color:t.portfolioValue<=t.cumulativePaid?"#60c080":"#e06060"}}>
+            {t.portfolioValue<=t.cumulativePaid?"✓ Ahead":`Gap: ${fmt(t.portfolioValue-t.cumulativePaid)}`}
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",gap:20,marginTop:10,justifyContent:"center",flexWrap:"wrap"}}>
+        {[["#c9a84c",false,"Portfolio if left invested"],["#8898cc",true,"Cumulative repaid"],["#333350",true,"Original loan total"]].map(([c,d,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#aaa8c0"}}>
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke={c} strokeWidth="2" strokeDasharray={d?"5,3":"none"}/></svg>
+            {l}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App(){
+  const [state,      setState]     = useState(()=>load(STORAGE_KEY,DEFAULT));
+  const [avKey,      setAvKey]     = useState(()=>localStorage.getItem(AV_KEY_STORE)||"");
+  const [avKeyInput, setAvKeyInput]= useState("");
+  const [market,     setMarket]    = useState(null);
+  const [loading,    setLoading]   = useState(false);
+  const [error,      setError]     = useState("");
+  const [tab,        setTab]       = useState("dashboard");
+  const [ledgerTab,  setLedgerTab] = useState("drawdowns");
+  const [showSetup,  setShowSetup] = useState(false);
+  const [lastFetched,setLastFetched]=useState(null);
+  const [manualPrice,setManual]    = useState("");
+
+  // Drawdown form
+  const [ddAmt,  setDdAmt]  = useState("");
+  const [ddDate, setDdDate] = useState(today());
+  const [ddNote, setDdNote] = useState("");
+
+  // Repayment form
+  const [rpAmt,  setRpAmt]  = useState("");
+  const [rpDate, setRpDate] = useState(today());
+
+  const upd = patch => setState(s=>{const n={...s,...patch};save(STORAGE_KEY,n);return n;});
+
+  const saveKey = () => {
+    const k=avKeyInput.trim();
+    if(!k){setError("Paste your Alpha Vantage key first");return;}
+    localStorage.setItem(AV_KEY_STORE,k);
+    setAvKey(k);setAvKeyInput("");setShowSetup(false);setError("");
+  };
+
+  // ── Core maths ──────────────────────────────────────────────────────────────
+  const todayStr = useMemo(()=>today(),[]);
+  const activeDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date<=todayStr),[state.drawdowns,todayStr]);
+  const futureDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date>todayStr),[state.drawdowns,todayStr]);
+  const totalDrawn    = useMemo(()=>activeDrawdowns.reduce((s,d)=>s+d.amount,0),[activeDrawdowns]);
+  const totalFuture   = useMemo(()=>futureDrawdowns.reduce((s,d)=>s+d.amount,0),[futureDrawdowns]);
+  const totalRepaid   = useMemo(()=>(state.repayments||[]).reduce((s,r)=>s+r.amount,0),[state.repayments]);
+  const outstanding   = Math.max(totalDrawn - totalRepaid, 0);
+
+  const r   = Math.pow(1+state.annualReturn/100,1/12)-1;
+  const pmt = useMemo(()=>{
+    if(totalDrawn<=0) return 0;
+    const m=Math.max(state.months,1);
+    if(r===0) return totalDrawn/m;
+    return (totalDrawn*r)/(1-Math.pow(1+r,-m));
+  },[totalDrawn,r,state.months]);
+
+  const portfolioNow = (market?.changeFromBaseline!=null && totalDrawn>0)
+    ? totalDrawn*(1+market.changeFromBaseline/100) : null;
+  const netPos = portfolioNow!=null ? totalRepaid-portfolioNow : null;
+
+  // ── Snapshot helper ─────────────────────────────────────────────────────────
+  const addSnapshot=(spyPrice,baseline,repaidSoFar)=>{
+    const portfolioValue=totalDrawn*(spyPrice/baseline);
+    const filtered=(state.priceHistory||[]).filter(h=>h.date!==today());
+    return[...filtered,{date:today(),spyPrice,portfolioValue,cumulativePaid:repaidSoFar}]
+      .sort((a,b)=>a.date.localeCompare(b.date)).slice(-104);
+  };
+
+  // ── Market fetch ────────────────────────────────────────────────────────────
+  const fetchMarket=async()=>{
+    if(!avKey){setShowSetup(true);return;}
+    setLoading(true);setError("");
+    try{
+      const parsed=await fetchAlphaVantage(avKey);
+      const baseline=state.sp500Baseline||parsed.price;
+      parsed.changeFromBaseline=((parsed.price-baseline)/baseline)*100;
+      setMarket(parsed);
+      setLastFetched(new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}));
+      const patch={};
+      if(!state.sp500Baseline) patch.sp500Baseline=parsed.price;
+      if(totalDrawn>0) patch.priceHistory=addSnapshot(parsed.price,baseline,totalRepaid);
+      upd(patch);
+    }catch(e){setError(e.message);}
+    setLoading(false);
+  };
+
+  const applyManual=()=>{
+    const p=parseFloat(manualPrice);
+    if(!p||p<=0) return;
+    const baseline=state.sp500Baseline||p;
+    setMarket({price:p,changeToday:null,change1W:null,change1M:null,changeYTD:null,changeFromBaseline:((p-baseline)/baseline)*100,lastUpdated:"Manual entry",source:"Manual"});
+    const patch={};
+    if(!state.sp500Baseline) patch.sp500Baseline=p;
+    if(totalDrawn>0) patch.priceHistory=addSnapshot(p,baseline,totalRepaid);
+    upd(patch);setManual("");
+  };
+
+  // ── Drawdowns ───────────────────────────────────────────────────────────────
+  const addDrawdown=()=>{
+    const amt=parseFloat(ddAmt);
+    if(!amt||amt<=0) return;
+    const sorted=[...(state.drawdowns||[]),{id:Date.now(),date:ddDate,amount:amt,note:ddNote.trim()||"Kernel withdrawal"}]
+      .sort((a,b)=>a.date.localeCompare(b.date));
+    upd({drawdowns:sorted});
+    setDdAmt("");setDdNote("");
+  };
+  const delDrawdown=id=>upd({drawdowns:(state.drawdowns||[]).filter(d=>d.id!==id)});
+
+  // ── Repayments ──────────────────────────────────────────────────────────────
+  const addRepayment=()=>{
+    const amt=parseFloat(rpAmt);
+    if(!amt||amt<=0) return;
+    const sorted=[...(state.repayments||[]),{id:Date.now(),date:rpDate,amount:amt}]
+      .sort((a,b)=>a.date.localeCompare(b.date));
+    upd({repayments:sorted});
+    setRpAmt("");
+  };
+  const delRepayment=id=>upd({repayments:(state.repayments||[]).filter(r=>r.id!==id)});
+
+  // ── Style helpers ───────────────────────────────────────────────────────────
+  const inp =(ex={})=>({background:"#111118",border:"1px solid #333350",borderRadius:8,padding:"11px 14px",color:"#f0e8d8",fontSize:14,outline:"none",width:"100%",...ex});
+  const btn =(ex={})=>({border:"1px solid #c9a84c66",borderRadius:8,background:"#c9a84c18",color:"#c9a84c",padding:"10px 18px",cursor:"pointer",fontSize:13,...ex});
+  const card=(label,value,sub,color="#e8e0d0")=>(
+    <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"16px 14px"}}>
+      <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>{label}</div>
+      <div style={{fontSize:20,color,fontFamily:"'DM Mono',monospace",fontWeight:300}}>{value}</div>
+      <div style={{fontSize:11,color:"#555570",marginTop:4}}>{sub}</div>
+    </div>
+  );
+
+  const TABS=[["dashboard","Dashboard"],["chart","Chart"],["ledger","Ledger"],["settings","Settings"]];
+
+  return(
+    <div style={{minHeight:"100vh"}}>
+
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#12122a,#1c1a2e)",borderBottom:"1px solid #2a2a4a",padding:"30px 24px 22px"}}>
+        <div style={{maxWidth:760,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontSize:10,letterSpacing:"0.25em",color:"#c9a84c",textTransform:"uppercase",marginBottom:8}}>Kernel · S&P 500</div>
+            <h1 style={{fontSize:26,fontWeight:400,color:"#f0e8d8"}}>Self-Loan Tracker</h1>
+            <p style={{marginTop:6,fontSize:13,color:"#6668aa"}}>Track drawdowns and repayments against live market performance</p>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+            <button onClick={()=>setShowSetup(v=>!v)} style={{background:"none",border:`1px solid ${avKey?"#2a5a3a":"#c9a84c55"}`,borderRadius:8,color:avKey?"#60c080":"#c9a84c",padding:"7px 14px",cursor:"pointer",fontSize:11}}>
+              {avKey?"✓ Free API Key Set":"⚙ Set Free API Key"}
+            </button>
+            {lastFetched&&<span style={{fontSize:10,color:"#333350"}}>Fetched {lastFetched}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* API Key Setup */}
+      {showSetup&&(
+        <div style={{background:"#13131f",borderBottom:"1px solid #2a2a4a",padding:"18px 24px"}} className="fade-in">
+          <div style={{maxWidth:760,margin:"0 auto"}}>
+            <p style={{fontSize:12,color:"#8888aa",marginBottom:4,lineHeight:1.7}}>
+              <strong style={{color:"#c9a84c"}}>Free setup (2 min):</strong> Go to{" "}
+              <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style={{color:"#8898cc"}}>alphavantage.co/support/#api-key</a>,
+              enter your email — free key, no credit card, 25 calls/day.
+            </p>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10}}>
+              <input type="text" placeholder="Paste your Alpha Vantage API key…" value={avKeyInput}
+                onChange={e=>setAvKeyInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveKey()}
+                style={{...inp(),flex:1,minWidth:220,fontSize:13}}/>
+              <button onClick={saveKey} style={btn()}>Save Key</button>
+              {avKey&&<button onClick={()=>{localStorage.removeItem(AV_KEY_STORE);setAvKey("");}} style={btn({background:"none",border:"1px solid #e0606044",color:"#e06060"})}>Remove</button>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div style={{borderBottom:"1px solid #2a2a4a",background:"#12122a",position:"sticky",top:0,zIndex:10}}>
+        <div style={{maxWidth:760,margin:"0 auto",display:"flex"}}>
+          {TABS.map(([id,label])=>(
+            <button key={id} onClick={()=>{setTab(id);setError("");}} style={{
+              background:"none",border:"none",padding:"14px 20px",cursor:"pointer",fontSize:13,
+              color:tab===id?"#c9a84c":"#666688",
+              borderBottom:tab===id?"2px solid #c9a84c":"2px solid transparent",marginBottom:-1,
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{maxWidth:760,margin:"0 auto",padding:"24px 20px 60px"}}>
+
+        {/* ══ DASHBOARD ══ */}
+        {tab==="dashboard"&&(
+          <div className="fade-in">
+
+            {/* Summary strip */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:futureDrawdowns.length>0?10:16}}>
+              {[
+                {label:"Active Drawdowns",  value:totalDrawn>0?fmt(totalDrawn):"—",   sub:`${activeDrawdowns.length} in effect today`,                                            color:"#e06060"},
+                {label:"Total Repaid",      value:fmt(totalRepaid),  sub:`${(state.repayments||[]).length} payment${(state.repayments||[]).length!==1?"s":""}`,  color:"#60c080"},
+                {label:"Outstanding",       value:totalDrawn>0?fmt(outstanding):"—",  sub:totalDrawn>0?`${((outstanding/totalDrawn)*100).toFixed(1)}% of active drawn`:"No active drawdowns yet", color:"#c9a84c"},
+                {label:"Break-Even Monthly",value:totalDrawn>0?fmt(pmt):"—",  sub:totalDrawn>0?`at ${state.annualReturn}% p.a.`:"Increases as drawdowns activate",       color:"#8898cc"},
+              ].map(({label,value,sub,color})=>(
+                <div key={label} style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"14px 12px"}}>
+                  <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{label}</div>
+                  <div style={{fontSize:18,color,fontFamily:"'DM Mono',monospace",fontWeight:300}}>{value}</div>
+                  <div style={{fontSize:11,color:"#555570",marginTop:4}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Upcoming drawdowns banner */}
+            {futureDrawdowns.length>0&&(
+              <div style={{background:"#161622",border:"1px solid #c9a84c33",borderRadius:10,padding:"12px 16px",marginBottom:16}}>
+                <div style={{fontSize:10,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:8}}>
+                  Scheduled — not yet active
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {futureDrawdowns.map(d=>(
+                    <div key={d.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,flexWrap:"wrap",gap:4}}>
+                      <span style={{color:"#8888aa",fontFamily:"'DM Mono',monospace"}}>{d.date}</span>
+                      <span style={{color:"#aaa8c0",flex:1,paddingLeft:12}}>{d.note}</span>
+                      <span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{fmt(d.amount)}</span>
+                    </div>
+                  ))}
+                  <div style={{borderTop:"1px solid #2a2a3a",marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:12}}>
+                    <span style={{color:"#555570"}}>Total scheduled</span>
+                    <span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{fmt(totalFuture)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Market card */}
+            <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
+                <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase"}}>
+                  S&P 500{market?.source?` · ${market.source}`:""}
+                </div>
+                <button onClick={fetchMarket} disabled={loading} style={btn({background:loading?"#2a2a4a":"#c9a84c18",color:loading?"#888":"#c9a84c",cursor:loading?"not-allowed":"pointer"})}>
+                  {loading?"⟳ Fetching…":"↻  Refresh Market"}
+                </button>
+              </div>
+
+              {error&&!showSetup&&<div style={{background:"#1a0e10",border:"1px solid #e0606033",borderRadius:8,padding:"12px 14px",marginBottom:14,fontSize:12,color:"#e06060"}}>⚠ {error}</div>}
+
+              {!market&&!loading&&(
+                <div>
+                  <div style={{textAlign:"center",padding:"16px 0 12px",color:"#444460",fontSize:13}}>
+                    {avKey?"Hit Refresh to pull live data":"Set a free API key above — or enter the price manually below"}
+                  </div>
+                  <div style={{borderTop:"1px solid #1e1e32",paddingTop:14,marginTop:4}}>
+                    <div style={{fontSize:11,color:"#555570",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Enter S&P 500 price manually</div>
+                    <div style={{display:"flex",gap:10}}>
+                      <input type="number" placeholder="e.g. 5600" value={manualPrice} onChange={e=>setManual(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyManual()} style={{...inp(),flex:1,maxWidth:200}}/>
+                      <button onClick={applyManual} style={btn()}>Apply</button>
+                    </div>
+                    <p style={{marginTop:8,fontSize:11,color:"#444460"}}>Find at <a href="https://finance.yahoo.com/quote/%5EGSPC" target="_blank" style={{color:"#8898cc"}}>finance.yahoo.com</a> — note SPY ≈ S&P 500 ÷ 10</p>
+                  </div>
+                </div>
+              )}
+
+              {market&&(
+                <div className="fade-in">
+                  <div style={{display:"flex",alignItems:"baseline",gap:14,marginBottom:6}}>
+                    <span style={{fontSize:42,fontWeight:300,color:"#f0e8d8",fontFamily:"'DM Mono',monospace",letterSpacing:"-0.02em"}}>
+                      {market.price?.toLocaleString("en-US",{maximumFractionDigits:2})}
+                    </span>
+                    {market.changeToday!=null&&<span style={{fontSize:17,color:sc(market.changeToday)}}>{fmtPct(market.changeToday)} today</span>}
+                  </div>
+                  <div style={{fontSize:11,color:"#444460",marginBottom:16}}>Last updated: {market.lastUpdated}</div>
+                  {market.change1W!=null&&(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                      {[["1 Week",market.change1W],["1 Month",market.change1M],["YTD",market.changeYTD]].map(([l,v])=>(
+                        <div key={l} style={{background:"#111118",borderRadius:8,padding:"12px 10px",textAlign:"center"}}>
+                          <div style={{fontSize:10,color:"#444460",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.1em"}}>{l}</div>
+                          <div style={{fontSize:16,color:sc(v),fontFamily:"'DM Mono',monospace",fontWeight:300}}>{fmtPct(v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{borderTop:"1px solid #1e1e32",paddingTop:14,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,color:"#444460"}}>Update manually:</span>
+                    <input type="number" placeholder="New S&P price" value={manualPrice} onChange={e=>setManual(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyManual()} style={{...inp(),width:160,padding:"7px 12px",fontSize:13}}/>
+                    <button onClick={applyManual} style={btn({padding:"7px 14px",fontSize:12})}>Apply</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Position cards */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+              {card("Break-Even Monthly",totalDrawn>0?fmt(pmt):"—",totalDrawn>0?`at ${state.annualReturn}% p.a. on ${fmt(totalDrawn)} drawn`:"Increases as drawdowns activate","#c9a84c")}
+              {card("Market Drift Since Baseline",
+                market?.changeFromBaseline!=null?fmtPct(market.changeFromBaseline):"—",
+                totalDrawn<=0?"No active drawdowns yet":
+                  market?`${fmt(totalDrawn)} → ${fmt(portfolioNow||0)}`:"Refresh to calculate",
+                totalDrawn<=0?"#555570":market?sc(market.changeFromBaseline):"#555570"
+              )}
+              {card("Portfolio Value (if left in)",
+                portfolioNow!=null?fmt(portfolioNow):(totalDrawn<=0?"—":"Refresh"),
+                totalDrawn<=0?"Awaiting first active drawdown":"What your withdrawals would be worth today",
+                totalDrawn<=0?"#555570":"#8898cc"
+              )}
+              {card("Your Net Position",
+                netPos!=null?fmt(Math.abs(netPos)):totalDrawn<=0?"—":"Refresh market",
+                netPos==null?(totalDrawn<=0?"No active drawdowns yet":"Enter market price above"):
+                  netPos>=0?"✓ Repaid ahead of market value":"✗ Gap to close",
+                netPos==null?"#555570":sc(netPos)
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {(totalDrawn>0||totalFuture>0)&&(
+              <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:18}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10,fontSize:12,color:"#8888aa"}}>
+                  <span>Repayment Progress <span style={{color:"#444460",fontSize:10}}>(active drawdowns only)</span></span>
+                  <span style={{fontFamily:"'DM Mono',monospace",fontWeight:300}}>{totalDrawn>0?`${Math.min((totalRepaid/totalDrawn)*100,100).toFixed(1)}% paid off`:"0% — awaiting first drawdown"}</span>
+                </div>
+                <div style={{background:"#111118",borderRadius:4,height:6,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:4,transition:"width 0.5s ease",width:totalDrawn>0?`${Math.min((totalRepaid/totalDrawn)*100,100)}%`:"0%",background:"linear-gradient(90deg,#8898cc,#60c080)"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:11,color:"#444460"}}>
+                  <span>$0</span>
+                  <span>
+                    {fmt(totalDrawn)} active{totalFuture>0?<span style={{color:"#c9a84c44"}}> + {fmt(totalFuture)} scheduled</span>:""}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ CHART ══ */}
+        {tab==="chart"&&(
+          <div className="fade-in">
+            <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:6}}>Portfolio vs Repayments Over Time</div>
+                <p style={{fontSize:12,color:"#666688",lineHeight:1.6}}>
+                  Gold = what your total withdrawals would be worth if left in Kernel each week. Blue dashed = cumulative repayments. When blue meets gold, you've broken even.
+                </p>
+              </div>
+              <LineChart history={(state.priceHistory||[]).filter(h=>h.portfolioValue>0)} loanAmount={totalDrawn+totalFuture}/>
+            </div>
+            {(state.priceHistory||[]).filter(h=>h.portfolioValue>0).length>0&&(
+              <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"14px 18px",borderBottom:"1px solid #2a2a4a",fontSize:10,color:"#c9a84c",letterSpacing:"0.2em",textTransform:"uppercase"}}>Snapshot History</div>
+                <div style={{maxHeight:300,overflowY:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead>
+                      <tr style={{background:"#111118",position:"sticky",top:0}}>
+                        {["Date","SPY Price","Portfolio Value","Cumulative Repaid","Gap"].map(h=>(
+                          <th key={h} style={{padding:"10px 14px",textAlign:"right",color:"#444460",fontWeight:400,fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...(state.priceHistory||[]).filter(h=>h.portfolioValue>0)].reverse().map((h,i)=>{
+                        const gap=h.portfolioValue-h.cumulativePaid;
+                        return(
+                          <tr key={h.date} style={{borderTop:"1px solid #1e1e32",background:i%2===0?"transparent":"#12121e"}}>
+                            <td style={{padding:"9px 14px",textAlign:"right",color:"#8888aa",fontFamily:"'DM Mono',monospace",fontSize:11}}>{h.date}</td>
+                            <td style={{padding:"9px 14px",textAlign:"right",color:"#e8e0d0",fontFamily:"'DM Mono',monospace"}}>{h.spyPrice?.toFixed(2)}</td>
+                            <td style={{padding:"9px 14px",textAlign:"right",color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{fmt(h.portfolioValue)}</td>
+                            <td style={{padding:"9px 14px",textAlign:"right",color:"#8898cc",fontFamily:"'DM Mono',monospace"}}>{fmt(h.cumulativePaid)}</td>
+                            <td style={{padding:"9px 14px",textAlign:"right",color:sc(-gap),fontFamily:"'DM Mono',monospace"}}>{gap<=0?"✓ Ahead":fmt(gap)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ LEDGER ══ */}
+        {tab==="ledger"&&(
+          <div className="fade-in">
+            {/* Sub-tabs */}
+            <div style={{display:"flex",gap:6,marginBottom:16,background:"#12122a",borderRadius:10,padding:4}}>
+              {[["drawdowns","💸 Drawdowns (money out)"],["repayments","💰 Repayments (money in)"]].map(([id,label])=>(
+                <button key={id} className="sub-tab" onClick={()=>setLedgerTab(id)} style={{
+                  flex:1,color:ledgerTab===id?"#c9a84c":"#666688",
+                  background:ledgerTab===id?"#1a1a2e":"none",
+                  border:ledgerTab===id?"1px solid #2a2a4a":"1px solid transparent",
+                }}>{label}</button>
+              ))}
+            </div>
+
+            {/* ── Drawdowns ── */}
+            {ledgerTab==="drawdowns"&&(
+              <div>
+                <div style={{background:"#1a1a2e",border:"1px solid #e0606033",borderRadius:12,padding:20,marginBottom:16}}>
+                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#e06060",textTransform:"uppercase",marginBottom:14}}>Log a Drawdown — Money Out of Kernel</div>
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
+                    <div style={{flex:1,minWidth:120,position:"relative"}}>
+                      <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#666",fontSize:14}}>$</span>
+                      <input type="number" placeholder="Amount" value={ddAmt} onChange={e=>setDdAmt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addDrawdown()} style={{...inp(),paddingLeft:28}}/>
+                    </div>
+                    <input type="date" value={ddDate} onChange={e=>setDdDate(e.target.value)} style={{...inp(),flex:1,minWidth:140}}/>
+                  </div>
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                    <input type="text" placeholder='e.g. "Flights to Japan"' value={ddNote} onChange={e=>setDdNote(e.target.value)} style={{...inp(),flex:1}}/>
+                    <button onClick={addDrawdown} style={btn({border:"1px solid #e0606066",background:"#e0606018",color:"#e06060"})}>+ Add Drawdown</button>
+                  </div>
+                </div>
+
+                {(state.drawdowns||[]).length===0?(
+                  <div style={{textAlign:"center",padding:"40px 0",color:"#444460",fontSize:13}}>
+                    No drawdowns logged yet. Add your first withdrawal above.
+                  </div>
+                ):(
+                  <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                      <thead>
+                        <tr style={{background:"#111118"}}>
+                          {["Date","Amount","Purpose","Running Total",""].map(h=>(
+                            <th key={h} style={{padding:"12px 14px",textAlign:"right",color:"#444460",fontWeight:400,fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(()=>{
+                          let running=0;
+                          return(state.drawdowns||[]).map((d,i)=>{
+                            const isFuture=d.date>todayStr;
+                            if(!isFuture) running+=d.amount;
+                            return(
+                              <tr key={d.id} style={{borderTop:"1px solid #1e1e32",background:isFuture?"#111118":i%2===0?"transparent":"#12121e",opacity:isFuture?0.6:1}}>
+                                <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:12}}>
+                                  <span style={{color:isFuture?"#c9a84c":"#8888aa"}}>{d.date}</span>
+                                  {isFuture&&<span style={{display:"block",fontSize:9,color:"#c9a84c88",letterSpacing:"0.1em",textTransform:"uppercase"}}>scheduled</span>}
+                                </td>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:isFuture?"#c9a84c":"#e06060",fontFamily:"'DM Mono',monospace"}}>{fmt(d.amount)}</td>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:"#aaa8c0",fontSize:12}}>{d.note}</td>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:isFuture?"#555570":"#e8e0d0",fontFamily:"'DM Mono',monospace",fontSize:12}}>
+                                  {isFuture?"—":fmt(running)}
+                                </td>
+                                <td style={{padding:"10px 14px",textAlign:"center"}}>
+                                  <button onClick={()=>delDrawdown(d.id)} style={{background:"none",border:"none",color:"#e06060",cursor:"pointer",fontSize:16}}>×</button>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                      <tfoot>
+                        {totalFuture>0&&(
+                          <tr style={{background:"#111118",borderTop:"1px solid #2a2a4a"}}>
+                            <td style={{padding:"10px 14px",textAlign:"right",color:"#c9a84c88",fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em"}}>Scheduled</td>
+                            <td style={{padding:"10px 14px",textAlign:"right",color:"#c9a84c88",fontFamily:"'DM Mono',monospace",fontSize:12}}>{fmt(totalFuture)}</td>
+                            <td colSpan={3} style={{padding:"10px 14px",textAlign:"right",color:"#444460",fontSize:11}}>{futureDrawdowns.length} not yet active</td>
+                          </tr>
+                        )}
+                        <tr style={{borderTop:"2px solid #2a2a4a",background:"#111118"}}>
+                          <td style={{padding:"12px 14px",textAlign:"right",color:"#444460",fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em"}}>Active Total</td>
+                          <td style={{padding:"12px 14px",textAlign:"right",color:"#e06060",fontFamily:"'DM Mono',monospace"}}>{fmt(totalDrawn)}</td>
+                          <td colSpan={3} style={{padding:"12px 14px",textAlign:"right",color:"#555570",fontSize:12}}>{activeDrawdowns.length} in effect · {(state.drawdowns||[]).length} total</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Repayments ── */}
+            {ledgerTab==="repayments"&&(
+              <div>
+                <div style={{background:"#1a1a2e",border:"1px solid #60c08033",borderRadius:12,padding:20,marginBottom:16}}>
+                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#60c080",textTransform:"uppercase",marginBottom:14}}>Log a Repayment — Money Back to Kernel</div>
+                  <div style={{marginBottom:10,fontSize:12,color:"#444460"}}>
+                    Break-even amount: <span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{fmt(pmt)}/month</span>
+                    {totalDrawn<=0&&<span style={{color:"#555570"}}> — add a drawdown first</span>}
+                  </div>
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:120,position:"relative"}}>
+                      <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#666",fontSize:14}}>$</span>
+                      <input type="number" placeholder={pmt>0?pmt.toFixed(0):"Amount"} value={rpAmt} onChange={e=>setRpAmt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addRepayment()} style={{...inp(),paddingLeft:28}}/>
+                    </div>
+                    <input type="date" value={rpDate} onChange={e=>setRpDate(e.target.value)} style={{...inp(),flex:1,minWidth:140}}/>
+                    <button onClick={addRepayment} style={btn({border:"1px solid #60c08066",background:"#60c08018",color:"#60c080"})}>+ Add Repayment</button>
+                  </div>
+                </div>
+
+                {(state.repayments||[]).length===0?(
+                  <div style={{textAlign:"center",padding:"40px 0",color:"#444460",fontSize:13}}>No repayments logged yet.</div>
+                ):(
+                  <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                      <thead>
+                        <tr style={{background:"#111118"}}>
+                          {["Date","Amount","Running Total","vs Break-Even",""].map(h=>(
+                            <th key={h} style={{padding:"12px 14px",textAlign:"right",color:"#444460",fontWeight:400,fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(()=>{
+                          let running=0;
+                          return(state.repayments||[]).map((rp,i)=>{
+                            running+=rp.amount;
+                            const diff=rp.amount-pmt;
+                            return(
+                              <tr key={rp.id} style={{borderTop:"1px solid #1e1e32",background:i%2===0?"transparent":"#12121e"}}>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:"#8888aa",fontFamily:"'DM Mono',monospace",fontSize:12}}>{rp.date}</td>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:"#60c080",fontFamily:"'DM Mono',monospace"}}>{fmt(rp.amount)}</td>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:"#e8e0d0",fontFamily:"'DM Mono',monospace"}}>{fmt(running)}</td>
+                                <td style={{padding:"10px 14px",textAlign:"right",color:pmt>0?sc(diff):"#555570",fontFamily:"'DM Mono',monospace",fontSize:12}}>{pmt>0?(diff>=0?`+${fmt(diff)}`:fmt(diff)):"—"}</td>
+                                <td style={{padding:"10px 14px",textAlign:"center"}}>
+                                  <button onClick={()=>delRepayment(rp.id)} style={{background:"none",border:"none",color:"#e06060",cursor:"pointer",fontSize:16}}>×</button>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{borderTop:"2px solid #2a2a4a",background:"#111118"}}>
+                          <td style={{padding:"12px 14px",textAlign:"right",color:"#444460",fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em"}}>Total</td>
+                          <td style={{padding:"12px 14px",textAlign:"right",color:"#60c080",fontFamily:"'DM Mono',monospace"}}>{fmt(totalRepaid)}</td>
+                          <td colSpan={3} style={{padding:"12px 14px",textAlign:"right",color:"#555570",fontSize:12}}>{(state.repayments||[]).length} payment{(state.repayments||[]).length!==1?"s":""}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ SETTINGS ══ */}
+        {tab==="settings"&&(
+          <div className="fade-in">
+            <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:22}}>Loan Configuration</div>
+              {[
+                {label:"Target Annual Return %",  key:"annualReturn",type:"number",note:"Kernel's expected return — charge yourself this rate to break even"},
+                {label:"Repayment Term (months)", key:"months",      type:"number",note:"How many months to repay over — break-even payment recalculates automatically"},
+              ].map(({label,key,type,note})=>(
+                <div key={key} style={{marginBottom:22}}>
+                  <label style={{display:"block",fontSize:12,color:"#8888aa",marginBottom:3}}>{label}</label>
+                  <div style={{fontSize:11,color:"#444460",marginBottom:8}}>{note}</div>
+                  <input type={type} value={state[key]} onChange={e=>{ const v=parseFloat(e.target.value); if(!isNaN(v)&&v>0) upd({[key]:v}); }} style={{...inp(),maxWidth:200}}/>
+                </div>
+              ))}
+              <div style={{background:"#111118",borderRadius:8,padding:"14px",fontSize:12,color:"#8888aa",lineHeight:1.7}}>
+                <strong style={{color:"#c9a84c"}}>Note:</strong> Loan amount is now driven by your Drawdowns ledger — there's no fixed amount to set here. Add each withdrawal in the Ledger tab and the break-even payment updates automatically.
+              </div>
+            </div>
+
+            <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:14}}>S&P 500 Baseline</div>
+              <p style={{fontSize:12,color:"#8888aa",marginBottom:14,lineHeight:1.7}}>
+                Locked in on your first market refresh. All drift calculations compare current SPY price against this starting point.
+              </p>
+              <div style={{fontSize:24,color:"#c9a84c",fontFamily:"'DM Mono',monospace",fontWeight:300,marginBottom:14}}>
+                {state.sp500Baseline?state.sp500Baseline.toLocaleString("en-US",{maximumFractionDigits:2}):"Not set yet"}
+              </div>
+              {state.sp500Baseline&&<button onClick={()=>upd({sp500Baseline:null})} style={btn({background:"none",border:"1px solid #e0606044",color:"#e06060",fontSize:11,padding:"7px 16px"})}>Reset baseline</button>}
+            </div>
+
+            <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22}}>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:6}}>Backup &amp; Restore</div>
+              <p style={{fontSize:12,color:"#8888aa",marginBottom:16,lineHeight:1.7}}>
+                Your data is stored under a permanent key that <strong style={{color:"#e8e0d0"}}>never changes between app updates</strong> — so any new version Claude gives you will find your data automatically. The only risk is clearing browser site data. Export a backup JSON occasionally and keep it in iCloud Drive or next to the HTML file as insurance.
+                If you ever switch browsers or get a new Mac, use Import to restore everything instantly.
+              </p>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
+                <button onClick={()=>{
+                  const data=JSON.stringify({...state, exportedAt:new Date().toISOString(), version:"slt-stable"}, null, 2);
+                  const blob=new Blob([data],{type:"application/json"});
+                  const url=URL.createObjectURL(blob);
+                  const a=document.createElement("a");
+                  a.href=url;
+                  a.download=`self-loan-backup-${new Date().toISOString().slice(0,10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  const toast=document.createElement("div");
+                  toast.textContent="✓ Backup downloaded";
+                  Object.assign(toast.style,{position:"fixed",bottom:"24px",right:"24px",background:"#1a3a2a",border:"1px solid #60c08066",color:"#60c080",padding:"10px 18px",borderRadius:"8px",fontSize:"13px",zIndex:9999,fontFamily:"Libre Baskerville,serif"});
+                  document.body.appendChild(toast);
+                  setTimeout(()=>toast.remove(),3000);
+                }} style={btn({padding:"10px 18px"})}>
+                  ⬇ Export Backup (JSON)
+                </button>
+                <label style={{...btn({padding:"10px 18px",cursor:"pointer"}), display:"inline-block"}}>
+                  ⬆ Import Backup (JSON)
+                  <input type="file" accept=".json" style={{display:"none"}} onChange={e=>{
+                    const file=e.target.files[0]; if(!file) return;
+                    const reader=new FileReader();
+                    reader.onload=ev=>{
+                      try{
+                        const parsed=JSON.parse(ev.target.result);
+                        if(!parsed.drawdowns||!parsed.repayments) throw new Error("Invalid backup — missing drawdowns or repayments fields");
+                        if(window.confirm(`Import backup from ${parsed.exportedAt?.slice(0,10)||"unknown date"}?\n\nThis will replace all current data.`)){
+                          const {exportedAt,version,...rest}=parsed;
+                          if(rest.priceHistory) rest.priceHistory=rest.priceHistory.filter(h=>h.portfolioValue>0);
+                          upd(rest);
+                          setMarket(null);
+                          alert("Data restored. Hit Refresh Market to reload live prices.");
+                        }
+                      }catch(err){ alert("Could not read backup: "+err.message); }
+                    };
+                    reader.readAsText(file);
+                    e.target.value="";
+                  }}/>
+                </label>
+              </div>
+              <div style={{borderTop:"1px solid #1e1e32",paddingTop:16}}>
+                <div style={{fontSize:10,letterSpacing:"0.2em",color:"#555570",textTransform:"uppercase",marginBottom:10}}>Current data summary</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12,color:"#8888aa"}}>
+                  {[
+                    ["Drawdowns",`${(state.drawdowns||[]).length} entries`],
+                    ["Repayments",`${(state.repayments||[]).length} entries`],
+                    ["Price snapshots",`${(state.priceHistory||[]).length} / 104`],
+                    ["Baseline set",state.sp500Baseline?"Yes":"No"],
+                  ].map(([k,v])=>(
+                    <div key={k} style={{background:"#111118",borderRadius:6,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
+                      <span>{k}</span><span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginTop:16,paddingTop:16,borderTop:"1px solid #1e1e32"}}>
+                <button onClick={()=>{ if(window.confirm("Clear all price history snapshots? Drawdowns and repayments are kept.")) upd({priceHistory:[]}); }} style={btn({background:"none",border:"1px solid #e0606044",color:"#e06060",fontSize:11,padding:"7px 16px"})}>
+                  Clear price history
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{borderTop:"1px solid #1a1a2e",padding:"16px 24px",textAlign:"center"}}>
+        <p style={{fontSize:11,color:"#2a2a40"}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice</p>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#12122a"/>
+
+  <!-- Subtle grid lines -->
+  <line x1="256" y1="80" x2="256" y2="432" stroke="#1e1e3a" stroke-width="1"/>
+  <line x1="80" y1="256" x2="432" y2="256" stroke="#1e1e3a" stroke-width="1"/>
+
+  <!-- Upward trend line (gold) — the "portfolio growing" motif -->
+  <polyline
+    points="96,360  160,300  224,280  288,220  352,180  416,130"
+    fill="none"
+    stroke="#c9a84c"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Repayment line (blue dashed) -->
+  <polyline
+    points="96,380  160,340  224,320  288,290  352,255  416,220"
+    fill="none"
+    stroke="#8898cc"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-dasharray="28,18"
+  />
+
+  <!-- Gold dot at top-right of trend line -->
+  <circle cx="416" cy="130" r="18" fill="#c9a84c"/>
+
+  <!-- "K" letterform (Kernel) — subtle, bottom-left -->
+  <text
+    x="100"
+    y="450"
+    font-family="Georgia, serif"
+    font-size="48"
+    font-weight="700"
+    fill="#c9a84c"
+    opacity="0.55"
+    letter-spacing="4"
+  >SLT</text>
+</svg>
