@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Self-Loan Tracker · Inspiro</title>
+<title>Self-Loan Tracker</title>
 
 <!-- ── PWA meta ─────────────────────────────────────────────────────────── -->
 <meta name="theme-color" content="#12122a">
@@ -34,6 +34,8 @@
   .fade-in{animation:fadeIn 0.3s ease forwards;}
   button{transition:opacity 0.15s;}button:hover:not(:disabled){opacity:0.85;}
   .sub-tab{background:none;border:none;padding:8px 16px;cursor:pointer;font-size:12px;border-radius:6px;font-family:'Libre Baskerville',Georgia,serif;}
+  @keyframes rotateOpen{from{transform:rotate(0deg);}to{transform:rotate(45deg);}}
+  @keyframes rotateClose{from{transform:rotate(45deg);}to{transform:rotate(0deg);}}
 </style>
 </head>
 <body>
@@ -72,9 +74,9 @@ const DEFAULT = {
   annualReturn: 8,
   months: 24,
   sp500Baseline: null,
-  priceHistory: [],   // price snapshots, max 104 — one per calendar day
-  drawdowns: [],   // [{id, date, amount, note}]  — money taken OUT of Sharesies
-  repayments: [],  // [{id, date, amount}]          — money paid BACK in
+  priceHistory: [],
+  drawdowns: [],
+  repayments: [],
 };
 
 function load(key,def){
@@ -138,7 +140,6 @@ function LineChart({history,loanAmount}){
   const [tip,setTip]=useState(null);
   const svgRef=useRef(null);
   const rectRef=useRef(null);
-  // R-15: cache bounding rect — avoids layout reflow on every mousemove
   useEffect(()=>{
     const update=()=>{if(svgRef.current) rectRef.current=svgRef.current.getBoundingClientRect();};
     update();
@@ -226,6 +227,258 @@ function LineChart({history,loanAmount}){
   );
 }
 
+// ── FAQ Accordion ─────────────────────────────────────────────────────────────
+const FAQ_SECTIONS = [
+  {
+    title: "The Basics",
+    icon: "◈",
+    items: [
+      {
+        q: "What is a self-loan?",
+        a: "A self-loan is when you withdraw money from your own Sharesies investment portfolio to spend on something — and then commit to paying it back. Instead of selling investments permanently, you treat the withdrawal as a personal loan to yourself, with a repayment schedule that lets your portfolio stay invested (in theory) while you cover the expense."
+      },
+      {
+        q: "What's the difference between a drawdown and a repayment?",
+        a: "A drawdown is money you take OUT of Sharesies — each withdrawal you log in the Ledger tab. A repayment is money you put BACK — each deposit you make toward paying the loan off. The tracker compares your cumulative repayments against what your withdrawals would be worth if you'd left them invested the whole time."
+      },
+      {
+        q: "What does 'Break-Even Monthly' mean?",
+        a: "Break-Even Monthly is the minimum repayment you'd need to make each month so that, over your chosen term, your total repayments match the expected growth of your original investment. It uses the standard loan amortisation formula applied to your target annual return rate. If you pay this amount every month, you'll have repaid the full opportunity cost of the withdrawal by the end of the term."
+      },
+      {
+        q: "What does 'Net Position' mean?",
+        a: "Net Position compares how much you've actually repaid against what your withdrawals are worth today at current market prices. A green figure means you've repaid more than the current portfolio value — you're ahead. A red figure shows the gap still to close. It's not about the original dollar amount withdrawn; it's about whether your repayments have caught up to what leaving the money invested would have produced."
+      },
+    ]
+  },
+  {
+    title: "Getting Started",
+    icon: "◉",
+    items: [
+      {
+        q: "How do I log my first withdrawal?",
+        a: "Go to the Ledger tab, make sure you're on the Drawdowns sub-tab, enter the amount and the date it occurred, add an optional note (e.g. 'Holiday flights'), then tap Add Drawdown. The Dashboard will immediately update your outstanding balance and break-even payment."
+      },
+      {
+        q: "Can I schedule a future drawdown I haven't made yet?",
+        a: "Yes. When adding a drawdown, set the date to a future date. It will appear in the Ledger with a 'scheduled' label and show up in the upcoming banner on the Dashboard, but it won't count toward your active balance or break-even calculation until that date arrives."
+      },
+      {
+        q: "How do I set up the free market data API key?",
+        a: "Click 'Set Free API Key' in the top-right corner of the app. Visit alphavantage.co/support/#api-key, enter your email address, and you'll receive a free key instantly — no credit card required. The free tier gives you 25 API calls per day, which is more than enough for daily or weekly refreshes. Paste the key into the field and tap Save Key."
+      },
+      {
+        q: "What if I don't want to use an API key?",
+        a: "You can enter the S&P 500 price manually using the text field on the Dashboard. Look up the current price at finance.yahoo.com (search ^GSPC). Note that the tracker uses SPY (an ETF that tracks the S&P 500) for API calls, so SPY price ≈ S&P 500 ÷ 10. Manual entry works fine — it still saves a snapshot and updates all your calculations."
+      },
+    ]
+  },
+  {
+    title: "The Numbers",
+    icon: "◇",
+    items: [
+      {
+        q: "Which annual return rate should I use?",
+        a: "The default is 8%, which is a commonly cited long-run average real return for a broad market index fund. You can adjust this in the Settings tab. A higher rate makes the break-even payment larger (you're charging yourself more for the opportunity cost). Use whatever rate reflects your own expectations for your Sharesies portfolio's long-term performance."
+      },
+      {
+        q: "Why does the chart need at least 2 market refreshes to appear?",
+        a: "The chart plots your portfolio value over time using saved price snapshots. Each time you refresh the market (or enter a manual price), a snapshot is saved for that day. You need at least two distinct data points to draw a line — so the chart appears from your second refresh onward. Snapshots are stored up to 104 entries (roughly two years of weekly refreshes)."
+      },
+      {
+        q: "How is 'Portfolio Value (if left in)' calculated?",
+        a: "It takes your total active drawdown amount and multiplies it by the ratio of the current SPY price to your baseline SPY price (set on your first refresh). For example: if you withdrew $5,000 when SPY was at $500, and SPY is now $550, the portfolio value would be $5,000 × (550 ÷ 500) = $5,500. This shows what that money would be worth today had you never withdrawn it."
+      },
+      {
+        q: "What's the difference between 'Outstanding' and 'Net Position'?",
+        a: "Outstanding is simple arithmetic: total drawn minus total repaid. It tells you how much of the original dollar amount you still owe yourself. Net Position is market-adjusted: it compares your repayments against the current market value of what you withdrew. Outstanding ignores market movement; Net Position reflects whether you've kept pace with the market's growth since your first withdrawal."
+      },
+    ]
+  },
+  {
+    title: "Your Data",
+    icon: "◎",
+    items: [
+      {
+        q: "Where is my data stored? Is it sent anywhere?",
+        a: "All your data — drawdowns, repayments, price history, and settings — is stored exclusively in your browser's localStorage under the key 'slt-loan-tracker'. Nothing is sent to any server. The app code is hosted on GitHub Pages as static files; there is no backend, no database, and no account. Your data never leaves your device."
+      },
+      {
+        q: "Will updating index.html delete my data?",
+        a: "No. Your data is stored in the browser independently of the app files. As long as the storage key 'slt-loan-tracker' remains unchanged (and it always will — this is intentional), any new version of the app will find your existing data automatically. Updating the HTML file on GitHub simply replaces the code; it has no effect on what's stored in localStorage."
+      },
+      {
+        q: "How do I export a backup?",
+        a: "Go to the Settings tab and tap 'Export Backup (JSON)'. This downloads a timestamped JSON file containing all your drawdowns, repayments, price history, and settings. Store it somewhere safe — iCloud Drive, Google Drive, or alongside your index.html file. To restore, use 'Import Backup (JSON)' on the same page."
+      },
+      {
+        q: "Will clearing my browser cache or site data delete my data?",
+        a: "Yes — if you clear site data for the domain where the app is hosted, localStorage is erased along with it. Clearing your browser cache alone (just cached files) does not affect localStorage. The risk comes from 'Clear site data' or 'Remove all data for this site' actions in browser settings. This is why the Settings tab recommends exporting a backup regularly."
+      },
+    ]
+  },
+];
+
+function FAQAccordion() {
+  const [openItems, setOpenItems] = useState({});
+
+  const toggle = (sectionIdx, itemIdx) => {
+    const key = `${sectionIdx}-${itemIdx}`;
+    setOpenItems(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const isOpen = (sectionIdx, itemIdx) => !!openItems[`${sectionIdx}-${itemIdx}`];
+
+  return (
+    <div className="fade-in">
+      {/* Intro */}
+      <div style={{
+        background: "#1a1a2e",
+        border: "1px solid #2a2a4a",
+        borderRadius: 12,
+        padding: "20px 22px",
+        marginBottom: 20,
+      }}>
+        <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:10}}>
+          Frequently Asked Questions
+        </div>
+        <p style={{fontSize:13,color:"#8888aa",lineHeight:1.75}}>
+          Everything you need to know about using the Self-Loan Tracker — from the core concept through to data safety.
+        </p>
+      </div>
+
+      {/* Sections */}
+      {FAQ_SECTIONS.map((section, sIdx) => (
+        <div key={sIdx} style={{marginBottom: 16}}>
+          {/* Section heading */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 8,
+            paddingLeft: 4,
+          }}>
+            <span style={{color:"#c9a84c", fontSize:14}}>{section.icon}</span>
+            <span style={{
+              fontSize: 10,
+              letterSpacing: "0.18em",
+              color: "#c9a84c",
+              textTransform: "uppercase",
+              fontFamily: "'Libre Baskerville', Georgia, serif",
+            }}>{section.title}</span>
+            <div style={{flex:1, height:1, background:"#1e1e32", marginLeft:4}}/>
+          </div>
+
+          {/* Items */}
+          <div style={{
+            background: "#1a1a2e",
+            border: "1px solid #2a2a4a",
+            borderRadius: 12,
+            overflow: "hidden",
+          }}>
+            {section.items.map((item, iIdx) => {
+              const open = isOpen(sIdx, iIdx);
+              const isLast = iIdx === section.items.length - 1;
+              return (
+                <div key={iIdx} style={{
+                  borderBottom: isLast ? "none" : "1px solid #1e1e32",
+                  borderLeft: open ? "2px solid #c9a84c" : "2px solid transparent",
+                  transition: "border-color 0.2s ease",
+                }}>
+                  {/* Question row */}
+                  <button
+                    onClick={() => toggle(sIdx, iIdx)}
+                    style={{
+                      width: "100%",
+                      background: open ? "#111118" : "none",
+                      border: "none",
+                      padding: "16px 18px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      textAlign: "left",
+                      transition: "background 0.2s ease",
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 13,
+                      color: open ? "#f0e8d8" : "#c8c0b0",
+                      fontFamily: "'Libre Baskerville', Georgia, serif",
+                      lineHeight: 1.5,
+                      flex: 1,
+                    }}>
+                      {item.q}
+                    </span>
+                    <span style={{
+                      color: "#c9a84c",
+                      fontSize: 20,
+                      fontWeight: 300,
+                      flexShrink: 0,
+                      width: 24,
+                      height: 24,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transform: open ? "rotate(45deg)" : "rotate(0deg)",
+                      transition: "transform 0.25s ease",
+                      lineHeight: 1,
+                      fontFamily: "'DM Mono', monospace",
+                    }}>
+                      +
+                    </span>
+                  </button>
+
+                  {/* Answer panel */}
+                  {open && (
+                    <div
+                      className="fade-in"
+                      style={{
+                        padding: "0 18px 18px 18px",
+                        background: "#111118",
+                      }}
+                    >
+                      <div style={{
+                        height: 1,
+                        background: "#1e1e32",
+                        marginBottom: 14,
+                      }}/>
+                      <p style={{
+                        fontSize: 13,
+                        color: "#9090b0",
+                        lineHeight: 1.8,
+                        fontFamily: "'Libre Baskerville', Georgia, serif",
+                      }}>
+                        {item.a}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Footer note */}
+      <div style={{
+        marginTop: 8,
+        padding: "14px 18px",
+        background: "#13131f",
+        border: "1px solid #1e1e32",
+        borderRadius: 10,
+        fontSize: 11,
+        color: "#444460",
+        lineHeight: 1.7,
+        textAlign: "center",
+      }}>
+        Still have a question? The Settings tab has data management tools, and your data can always be exported as a backup JSON file.
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 function App(){
   const [state,      setState]     = useState(()=>load(STORAGE_KEY,DEFAULT));
@@ -259,7 +512,7 @@ function App(){
   };
 
   // ── Core maths ──────────────────────────────────────────────────────────────
-  const todayStr = useMemo(()=>today(),[]);  // computed once at page-load; reload to advance the date past midnight
+  const todayStr = useMemo(()=>today(),[]);
   const activeDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date<=todayStr),[state.drawdowns,todayStr]);
   const futureDrawdowns = useMemo(()=>(state.drawdowns||[]).filter(d=>d.date>todayStr),[state.drawdowns,todayStr]);
   const totalDrawn    = useMemo(()=>activeDrawdowns.reduce((s,d)=>s+d.amount,0),[activeDrawdowns]);
@@ -284,7 +537,7 @@ function App(){
     const portfolioValue=totalDrawn*(spyPrice/baseline);
     const filtered=(state.priceHistory||[]).filter(h=>h.date!==today());
     return[...filtered,{date:today(),spyPrice,portfolioValue,cumulativePaid:repaidSoFar}]
-      .sort((a,b)=>a.date.localeCompare(b.date)).slice(-104); // max 104 daily snapshots (≈ 2 yrs if refreshed weekly)
+      .sort((a,b)=>a.date.localeCompare(b.date)).slice(-104);
   };
 
   // ── Market fetch ────────────────────────────────────────────────────────────
@@ -307,7 +560,7 @@ function App(){
 
   const applyManual=()=>{
     const p=parseFloat(manualPrice);
-    if(!p||p<=0||p>100000){setManual("");return;} // R-11: reject absurd values that would corrupt baseline
+    if(!p||p<=0||p>100000){setManual("");return;}
     const baseline=state.sp500Baseline||p;
     setMarket({price:p,changeToday:null,change1W:null,change1M:null,changeYTD:null,changeFromBaseline:((p-baseline)/baseline)*100,lastUpdated:"Manual entry",source:"Manual"});
     const patch={};
@@ -349,7 +602,7 @@ function App(){
     </div>
   );
 
-  const TABS=[["dashboard","Dashboard"],["chart","Chart"],["ledger","Ledger"],["settings","Settings"]];
+  const TABS=[["dashboard","Dashboard"],["chart","Chart"],["ledger","Ledger"],["settings","Settings"],["faq","FAQ"]];
 
   return(
     <div style={{minHeight:"100vh"}}>
@@ -359,10 +612,10 @@ function App(){
         <div style={{maxWidth:760,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
           <div>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-              <img src="inspiro-logo.png" alt="Inspiro"
+              <img src="inspiro-logo.png" alt=""
                 style={{height:36,width:36,borderRadius:6,objectFit:"cover"}}
                 onError={e=>{e.currentTarget.style.display='none';}}/>
-              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Inspiro</div>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Self-Loan Tracker</div>
             </div>
             <h1 style={{fontSize:26,fontWeight:400,color:"#f0e8d8"}}>Self-Loan Tracker</h1>
             <p style={{marginTop:6,fontSize:13,color:"#6668aa"}}>Track drawdowns and repayments against live market performance</p>
@@ -811,7 +1064,7 @@ function App(){
             <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
               <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:22}}>Loan Configuration</div>
               {[
-                {label:"Target Annual Return %",  key:"annualReturn",type:"number",note:"Sharesies expected return — charge yourself this rate to break even"},
+                {label:"Target Annual Return %",  key:"annualReturn",type:"number",note:"Expected return on your investments — charge yourself this rate to break even"},
                 {label:"Repayment Term (months)", key:"months",      type:"number",note:"How many months to repay over — break-even payment recalculates automatically"},
               ].map(({label,key,type,note})=>(
                 <div key={key} style={{marginBottom:22}}>
@@ -839,8 +1092,8 @@ function App(){
             <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22}}>
               <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:6}}>Backup &amp; Restore</div>
               <p style={{fontSize:12,color:"#8888aa",marginBottom:16,lineHeight:1.7}}>
-                Your data is stored under a permanent key that <strong style={{color:"#e8e0d0"}}>never changes between app updates</strong> — so any new version Claude gives you will find your data automatically. The only risk is clearing browser site data. Export a backup JSON occasionally and keep it in iCloud Drive or next to the HTML file as insurance.
-                If you ever switch browsers or get a new Mac, use Import to restore everything instantly.
+                Your data is stored under a permanent key that <strong style={{color:"#e8e0d0"}}>never changes between app updates</strong> — so any new version will find your data automatically. The only risk is clearing browser site data. Export a backup JSON occasionally and keep it in iCloud Drive or next to the HTML file as insurance.
+                If you ever switch browsers or get a new device, use Import to restore everything instantly.
               </p>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
                 <button onClick={()=>{
@@ -871,7 +1124,6 @@ function App(){
                         if(!parsed.drawdowns||!parsed.repayments) throw new Error("Invalid backup — missing drawdowns or repayments fields");
                         if(window.confirm(`Import backup from ${parsed.exportedAt?.slice(0,10)||"unknown date"}?\n\nThis will replace all current data.`)){
                           const {exportedAt,version,...rest}=parsed;
-                          // R-06: guard against corrupted numeric settings in backup
                           if(rest.annualReturn!=null&&(isNaN(rest.annualReturn)||rest.annualReturn<=0)) rest.annualReturn=DEFAULT.annualReturn;
                           if(rest.months!=null&&(isNaN(rest.months)||rest.months<=0)) rest.months=DEFAULT.months;
                           if(rest.priceHistory) rest.priceHistory=rest.priceHistory.filter(h=>h.portfolioValue>0);
@@ -909,6 +1161,10 @@ function App(){
             </div>
           </div>
         )}
+
+        {/* ══ FAQ ══ */}
+        {tab==="faq"&&<FAQAccordion/>}
+
       </div>
 
       <div style={{borderTop:"1px solid #1a1a2e",padding:"20px 24px 24px",textAlign:"center"}}>
