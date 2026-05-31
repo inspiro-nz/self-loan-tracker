@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Self-Loan Tracker</title>
+<title>Self-Loan Tracker by Inspiro</title>
 
 <!-- ── PWA meta ─────────────────────────────────────────────────────────── -->
 <meta name="theme-color" content="#12122a">
@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SelfLoan">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="description" content="Track S&P 500 drawdowns and repayments against live market performance">
+<meta name="description" content="Track index fund drawdowns and repayments against live market performance">
 
 <!-- ── PWA manifest & icons ─────────────────────────────────────────────── -->
 <link rel="manifest" href="manifest.json">
@@ -36,6 +36,16 @@
   .sub-tab{background:none;border:none;padding:8px 16px;cursor:pointer;font-size:12px;border-radius:6px;font-family:'Libre Baskerville',Georgia,serif;}
   @keyframes rotateOpen{from{transform:rotate(0deg);}to{transform:rotate(45deg);}}
   @keyframes rotateClose{from{transform:rotate(45deg);}to{transform:rotate(0deg);}}
+
+  /* Mobile single-column cards */
+  @media (max-width: 480px) {
+    .summary-grid { grid-template-columns: 1fr !important; }
+    .position-grid { grid-template-columns: 1fr !important; }
+  }
+
+  /* Tooltip fade */
+  @keyframes tooltipIn{from{opacity:0;transform:translateY(-3px);}to{opacity:1;transform:translateY(0);}}
+  .tooltip-box{animation:tooltipIn 0.18s ease forwards;}
 </style>
 </head>
 <body>
@@ -135,6 +145,41 @@ async function fetchAlphaVantage(apiKey){
   };
 }
 
+// ── Inline Tooltip ─────────────────────────────────────────────────────────────
+function InfoTip({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{position:"relative",display:"inline-block",verticalAlign:"middle",marginLeft:5}}>
+      <button
+        onClick={e=>{e.stopPropagation();setOpen(v=>!v);}}
+        style={{
+          background:"none",border:"1px solid #333350",borderRadius:"50%",
+          width:16,height:16,cursor:"pointer",fontSize:9,color:"#666688",
+          display:"inline-flex",alignItems:"center",justifyContent:"center",
+          lineHeight:1,padding:0,flexShrink:0,
+        }}
+        title="More info"
+      >ℹ</button>
+      {open&&(
+        <div className="tooltip-box" style={{
+          position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",
+          background:"#1e1e38",border:"1px solid #2a2a4a",borderRadius:8,
+          padding:"9px 13px",fontSize:11,color:"#aaa8c0",lineHeight:1.6,
+          whiteSpace:"normal",width:220,zIndex:100,boxShadow:"0 4px 20px #00000066",
+          textAlign:"left",
+        }}>
+          {text}
+          <div style={{
+            position:"absolute",bottom:-5,left:"50%",transform:"translateX(-50%)",
+            width:8,height:8,background:"#1e1e38",border:"1px solid #2a2a4a",
+            borderTop:"none",borderLeft:"none",rotate:"45deg",
+          }}/>
+        </div>
+      )}
+    </span>
+  );
+}
+
 // ── SVG Line Chart ─────────────────────────────────────────────────────────────
 function LineChart({history,loanAmount}){
   const [tip,setTip]=useState(null);
@@ -146,11 +191,41 @@ function LineChart({history,loanAmount}){
     window.addEventListener('resize',update);
     return()=>window.removeEventListener('resize',update);
   },[history]);
+
+  // ── Empty state illustration ──
   if(!history||history.length<2) return(
-    <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",color:"#444460",fontSize:13}}>
-      Chart appears after 2+ market refreshes
+    <div style={{padding:"32px 20px 20px",textAlign:"center"}}>
+      {/* Mini SVG illustration */}
+      <svg viewBox="0 0 280 120" style={{width:"100%",maxWidth:280,height:"auto",marginBottom:20,opacity:0.55}}>
+        {/* Grid lines */}
+        {[0,1,2,3].map(i=>(
+          <line key={i} x1="30" y1={20+i*22} x2="260" y2={20+i*22} stroke="#1e1e32" strokeWidth="1"/>
+        ))}
+        {/* Dotted future portfolio line (gold) */}
+        <polyline points="30,90 80,72 130,55 180,38 230,24 260,18"
+          fill="none" stroke="#c9a84c" strokeWidth="2" strokeDasharray="5,4"
+          strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
+        {/* Dotted future repayment line (blue) */}
+        <polyline points="30,90 80,80 130,68 180,57 230,46 260,40"
+          fill="none" stroke="#8898cc" strokeWidth="2" strokeDasharray="5,4"
+          strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
+        {/* Single starting dot */}
+        <circle cx="30" cy="90" r="4" fill="#c9a84c" opacity="0.6"/>
+        <circle cx="30" cy="90" r="4" fill="#8898cc" opacity="0.4"/>
+        {/* Label arrows */}
+        <text x="180" y="32" fill="#c9a84c" fontSize="9" opacity="0.7" fontFamily="'DM Mono',monospace">portfolio growth</text>
+        <text x="180" y="52" fill="#8898cc" fontSize="9" opacity="0.7" fontFamily="'DM Mono',monospace">your repayments</text>
+      </svg>
+      <div style={{fontSize:13,color:"#555570",marginBottom:6}}>Chart builds as you go</div>
+      <p style={{fontSize:12,color:"#3a3a58",lineHeight:1.7,maxWidth:320,margin:"0 auto"}}>
+        Two lines will appear here: the gold line tracks what your withdrawals would be worth if left invested, and the blue line tracks your cumulative repayments. When they meet, you've broken even.
+      </p>
+      <p style={{fontSize:11,color:"#333350",marginTop:12}}>
+        Refresh market data twice to see your first data points.
+      </p>
     </div>
   );
+
   const W=680,H=220,PL=64,PR=20,PT=16,PB=36;
   const iW=W-PL-PR,iH=H-PT-PB;
   const allV=[...history.map(h=>h.portfolioValue),...history.map(h=>h.cumulativePaid),loanAmount];
@@ -227,6 +302,112 @@ function LineChart({history,loanAmount}){
   );
 }
 
+// ── Onboarding Welcome Screen ─────────────────────────────────────────────────
+function WelcomeScreen({ onGoToLedger, onGoToSettings }) {
+  return (
+    <div className="fade-in" style={{paddingTop:8}}>
+      {/* Hero */}
+      <div style={{
+        background:"linear-gradient(135deg,#161630,#1a1428)",
+        border:"1px solid #2a2a4a",
+        borderRadius:16,
+        padding:"32px 28px",
+        marginBottom:16,
+        textAlign:"center",
+      }}>
+        <div style={{
+          width:56,height:56,borderRadius:14,
+          background:"linear-gradient(135deg,#c9a84c22,#c9a84c44)",
+          border:"1px solid #c9a84c44",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          margin:"0 auto 20px",fontSize:26,
+        }}>◈</div>
+        <h2 style={{fontSize:22,fontWeight:400,color:"#f0e8d8",marginBottom:10}}>Welcome to Self-Loan Tracker</h2>
+        <p style={{fontSize:13,color:"#6668aa",lineHeight:1.8,maxWidth:400,margin:"0 auto"}}>
+          Track whether borrowing against your investments keeps pace with the market — and see exactly what you're saving versus a bank loan.
+        </p>
+      </div>
+
+      {/* 3-step guide */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:12,paddingLeft:2}}>
+          Get started in 3 steps
+        </div>
+        {[
+          {
+            num:"1",
+            title:"Set a free market data key",
+            desc:"Optional but recommended. Click "Set Free API Key" in the header. Visit alphavantage.co, enter your email, get a key instantly — no credit card needed.",
+            action:null,
+            actionLabel:null,
+            color:"#c9a84c",
+            note:"Skip this and enter prices manually instead.",
+          },
+          {
+            num:"2",
+            title:"Log your first drawdown",
+            desc:"Go to the Ledger tab and record the amount you withdrew from your investment fund and the date it happened. This sets your loan balance.",
+            action:onGoToLedger,
+            actionLabel:"Go to Ledger →",
+            color:"#e06060",
+            note:null,
+          },
+          {
+            num:"3",
+            title:"Refresh the market",
+            desc:"Come back to the Dashboard and hit Refresh Market — or enter the current index price manually below. Your break-even payment and position will calculate instantly.",
+            action:null,
+            actionLabel:null,
+            color:"#8898cc",
+            note:null,
+          },
+        ].map((step,i)=>(
+          <div key={i} style={{
+            background:"#1a1a2e",
+            border:`1px solid ${step.color}22`,
+            borderLeft:`3px solid ${step.color}88`,
+            borderRadius:10,
+            padding:"16px 18px",
+            marginBottom:10,
+            display:"flex",
+            gap:16,
+            alignItems:"flex-start",
+          }}>
+            <div style={{
+              width:28,height:28,borderRadius:"50%",
+              background:`${step.color}18`,
+              border:`1px solid ${step.color}44`,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:13,color:step.color,flexShrink:0,fontFamily:"'DM Mono',monospace",
+            }}>{step.num}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,color:"#e8e0d0",marginBottom:5,fontWeight:700}}>{step.title}</div>
+              <div style={{fontSize:12,color:"#7778a0",lineHeight:1.7}}>{step.desc}</div>
+              {step.note&&<div style={{fontSize:11,color:"#444460",marginTop:5,fontStyle:"italic"}}>{step.note}</div>}
+              {step.action&&(
+                <button onClick={step.action} style={{
+                  marginTop:10,background:"none",border:`1px solid ${step.color}55`,
+                  borderRadius:6,color:step.color,fontSize:11,padding:"5px 12px",cursor:"pointer",
+                }}>
+                  {step.actionLabel}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Concept note */}
+      <div style={{
+        background:"#13131f",border:"1px solid #1e1e32",borderRadius:10,
+        padding:"14px 18px",fontSize:12,color:"#444460",lineHeight:1.8,
+      }}>
+        <strong style={{color:"#555570"}}>What is a self-loan?</strong> Instead of borrowing from a bank, you withdraw from your own investment portfolio and commit to repaying it. Your investments keep compounding. Every repayment rebuilds your own wealth, not a bank's. This tracker shows whether you're keeping pace.
+      </div>
+    </div>
+  );
+}
+
 // ── FAQ Accordion ─────────────────────────────────────────────────────────────
 const FAQ_SECTIONS = [
   {
@@ -235,11 +416,11 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: "What is a self-loan?",
-        a: "A self-loan is when you withdraw money from your own Sharesies investment portfolio to spend on something — and then commit to paying it back. Instead of selling investments permanently, you treat the withdrawal as a personal loan to yourself, with a repayment schedule that lets your portfolio stay invested (in theory) while you cover the expense."
+        a: "A self-loan is when you withdraw money from your own investment portfolio to spend on something — and then commit to paying it back. Instead of selling investments permanently, you treat the withdrawal as a personal loan to yourself, with a repayment schedule that lets your portfolio stay invested (in theory) while you cover the expense."
       },
       {
         q: "What's the difference between a drawdown and a repayment?",
-        a: "A drawdown is money you take OUT of Sharesies — each withdrawal you log in the Ledger tab. A repayment is money you put BACK — each deposit you make toward paying the loan off. The tracker compares your cumulative repayments against what your withdrawals would be worth if you'd left them invested the whole time."
+        a: "A drawdown is money you take OUT of your investment fund — each withdrawal you log in the Ledger tab. A repayment is money you put BACK — each deposit you make toward paying the loan off. The tracker compares your cumulative repayments against what your withdrawals would be worth if you'd left them invested the whole time."
       },
       {
         q: "What does 'Break-Even Monthly' mean?",
@@ -269,7 +450,7 @@ const FAQ_SECTIONS = [
       },
       {
         q: "What if I don't want to use an API key?",
-        a: "You can enter the S&P 500 price manually using the text field on the Dashboard. Look up the current price at finance.yahoo.com (search ^GSPC). Note that the tracker uses SPY (an ETF that tracks the S&P 500) for API calls, so SPY price ≈ S&P 500 ÷ 10. Manual entry works fine — it still saves a snapshot and updates all your calculations."
+        a: "You can enter the index price manually using the text field on the Dashboard. Look up the current price at finance.yahoo.com (search ^GSPC). Note that the tracker uses SPY (an ETF that tracks the index) for API calls, so SPY price ≈ index ÷ 10. Manual entry works fine — it still saves a snapshot and updates all your calculations."
       },
     ]
   },
@@ -279,7 +460,7 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: "Which annual return rate should I use?",
-        a: "The default is 8%, which is a commonly cited long-run average real return for a broad market index fund. You can adjust this in the Settings tab. A higher rate makes the break-even payment larger (you're charging yourself more for the opportunity cost). Use whatever rate reflects your own expectations for your Sharesies portfolio's long-term performance."
+        a: "The default is 8%, which is a commonly cited long-run average real return for a broad market index fund. You can adjust this in the Settings tab. A higher rate makes the break-even payment larger (you're charging yourself more for the opportunity cost). Use whatever rate reflects your own expectations for your portfolio's long-term performance."
       },
       {
         q: "Why does the chart need at least 2 market refreshes to appear?",
@@ -287,7 +468,7 @@ const FAQ_SECTIONS = [
       },
       {
         q: "How is 'Portfolio Value (if left in)' calculated?",
-        a: "It takes your total active drawdown amount and multiplies it by the ratio of the current SPY price to your baseline SPY price (set on your first refresh). For example: if you withdrew $5,000 when SPY was at $500, and SPY is now $550, the portfolio value would be $5,000 × (550 ÷ 500) = $5,500. This shows what that money would be worth today had you never withdrawn it."
+        a: "It takes your total active drawdown amount and multiplies it by the ratio of the current index price to your baseline price (set on your first refresh). For example: if you withdrew $5,000 when the index was at $500, and it's now $550, the portfolio value would be $5,000 × (550 ÷ 500) = $5,500. This shows what that money would be worth today had you never withdrawn it."
       },
       {
         q: "What's the difference between 'Outstanding' and 'Net Position'?",
@@ -331,7 +512,6 @@ function FAQAccordion() {
 
   return (
     <div className="fade-in">
-      {/* Intro */}
       <div style={{
         background: "#1a1a2e",
         border: "1px solid #2a2a4a",
@@ -347,10 +527,8 @@ function FAQAccordion() {
         </p>
       </div>
 
-      {/* Sections */}
       {FAQ_SECTIONS.map((section, sIdx) => (
         <div key={sIdx} style={{marginBottom: 16}}>
-          {/* Section heading */}
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -369,7 +547,6 @@ function FAQAccordion() {
             <div style={{flex:1, height:1, background:"#1e1e32", marginLeft:4}}/>
           </div>
 
-          {/* Items */}
           <div style={{
             background: "#1a1a2e",
             border: "1px solid #2a2a4a",
@@ -385,7 +562,6 @@ function FAQAccordion() {
                   borderLeft: open ? "2px solid #c9a84c" : "2px solid transparent",
                   transition: "border-color 0.2s ease",
                 }}>
-                  {/* Question row */}
                   <button
                     onClick={() => toggle(sIdx, iIdx)}
                     style={{
@@ -430,7 +606,6 @@ function FAQAccordion() {
                     </span>
                   </button>
 
-                  {/* Answer panel */}
                   {open && (
                     <div
                       className="fade-in"
@@ -461,7 +636,6 @@ function FAQAccordion() {
         </div>
       ))}
 
-      {/* Footer note */}
       <div style={{
         marginTop: 8,
         padding: "14px 18px",
@@ -532,6 +706,9 @@ function App(){
     ? totalDrawn*(1+market.changeFromBaseline/100) : null;
   const netPos = portfolioNow!=null ? totalRepaid-portfolioNow : null;
 
+  // Onboarding: show welcome if no drawdowns AND no baseline
+  const showWelcome = (state.drawdowns||[]).length===0 && !state.sp500Baseline;
+
   // ── Snapshot helper ─────────────────────────────────────────────────────────
   const addSnapshot=(spyPrice,baseline,repaidSoFar)=>{
     const portfolioValue=totalDrawn*(spyPrice/baseline);
@@ -573,7 +750,7 @@ function App(){
   const addDrawdown=()=>{
     const amt=parseFloat(ddAmt);
     if(!amt||amt<=0) return;
-    const sorted=[...(state.drawdowns||[]),{id:Date.now(),date:ddDate,amount:amt,note:ddNote.trim()||"Sharesies withdrawal"}]
+    const sorted=[...(state.drawdowns||[]),{id:Date.now(),date:ddDate,amount:amt,note:ddNote.trim()||"Investment fund withdrawal"}]
       .sort((a,b)=>a.date.localeCompare(b.date));
     upd({drawdowns:sorted});
     setDdAmt("");setDdNote("");
@@ -594,13 +771,6 @@ function App(){
   // ── Style helpers ───────────────────────────────────────────────────────────
   const inp =(ex={})=>({background:"#111118",border:"1px solid #333350",borderRadius:8,padding:"11px 14px",color:"#f0e8d8",fontSize:14,outline:"none",width:"100%",...ex});
   const btn =(ex={})=>({border:"1px solid #c9a84c66",borderRadius:8,background:"#c9a84c18",color:"#c9a84c",padding:"10px 18px",cursor:"pointer",fontSize:13,...ex});
-  const card=(label,value,sub,color="#e8e0d0")=>(
-    <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"16px 14px"}}>
-      <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>{label}</div>
-      <div style={{fontSize:20,color,fontFamily:"'DM Mono',monospace",fontWeight:300}}>{value}</div>
-      <div style={{fontSize:11,color:"#555570",marginTop:4}}>{sub}</div>
-    </div>
-  );
 
   const TABS=[["dashboard","Dashboard"],["chart","Chart"],["ledger","Ledger"],["settings","Settings"],["faq","FAQ"]];
 
@@ -615,10 +785,10 @@ function App(){
               <img src="inspiro-logo.png" alt=""
                 style={{height:36,width:36,borderRadius:6,objectFit:"cover"}}
                 onError={e=>{e.currentTarget.style.display='none';}}/>
-              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Self-Loan Tracker</div>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#8fa8c8",textTransform:"uppercase"}}>Inspiro</div>
             </div>
             <h1 style={{fontSize:26,fontWeight:400,color:"#f0e8d8"}}>Self-Loan Tracker</h1>
-            <p style={{marginTop:6,fontSize:13,color:"#6668aa"}}>Track drawdowns and repayments against live market performance</p>
+            <p style={{marginTop:6,fontSize:13,color:"#6668aa"}}>Track drawdowns and repayments against live investment fund performance</p>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
             <button onClick={()=>setShowSetup(v=>!v)} style={{background:"none",border:`1px solid ${avKey?"#2a5a3a":"#c9a84c55"}`,borderRadius:8,color:avKey?"#60c080":"#c9a84c",padding:"7px 14px",cursor:"pointer",fontSize:11}}>
@@ -666,10 +836,18 @@ function App(){
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard"&&(
+          <>
+            {/* Welcome / onboarding screen */}
+            {showWelcome ? (
+              <WelcomeScreen
+                onGoToLedger={()=>setTab("ledger")}
+                onGoToSettings={()=>setTab("settings")}
+              />
+            ) : (
           <div className="fade-in">
 
             {/* Summary strip */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:futureDrawdowns.length>0?10:16}}>
+            <div className="summary-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:futureDrawdowns.length>0?10:16}}>
               {[
                 {label:"Active Drawdowns",  value:totalDrawn>0?fmt(totalDrawn):"—",   sub:`${activeDrawdowns.length} in effect today`,                                            color:"#e06060"},
                 {label:"Total Repaid",      value:fmt(totalRepaid),  sub:`${(state.repayments||[]).length} payment${(state.repayments||[]).length!==1?"s":""}`,  color:"#60c080"},
@@ -710,28 +888,31 @@ function App(){
             <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
                 <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase"}}>
-                  S&P 500{market?.source?` · ${market.source}`:""}
+                  Investment Index{market?.source?` · ${market.source}`:""}
                 </div>
-                <button onClick={fetchMarket} disabled={loading} style={btn({background:loading?"#2a2a4a":"#c9a84c18",color:loading?"#888":"#c9a84c",cursor:loading?"not-allowed":"pointer"})}>
-                  {loading?"⟳ Fetching…":"↻  Refresh Market"}
-                </button>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  {/* Manual price always visible */}
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <input type="number" placeholder="Manual price" value={manualPrice}
+                      onChange={e=>setManual(e.target.value)}
+                      onKeyDown={e=>e.key==="Enter"&&applyManual()}
+                      style={{...inp(),width:130,padding:"7px 12px",fontSize:12}}/>
+                    <button onClick={applyManual} style={btn({padding:"7px 12px",fontSize:12})}>Apply</button>
+                  </div>
+                  <button onClick={fetchMarket} disabled={loading} style={btn({background:loading?"#2a2a4a":"#c9a84c18",color:loading?"#888":"#c9a84c",cursor:loading?"not-allowed":"pointer"})}>
+                    {loading?"⟳ Fetching…":"↻ Refresh"}
+                  </button>
+                </div>
               </div>
 
               {error&&!showSetup&&<div style={{background:"#1a0e10",border:"1px solid #e0606033",borderRadius:8,padding:"12px 14px",marginBottom:14,fontSize:12,color:"#e06060"}}>⚠ {error}</div>}
 
               {!market&&!loading&&(
                 <div>
-                  <div style={{textAlign:"center",padding:"16px 0 12px",color:"#444460",fontSize:13}}>
-                    {avKey?"Hit Refresh to pull live data":"Set a free API key above — or enter the price manually below"}
+                  <div style={{textAlign:"center",padding:"12px 0 8px",color:"#444460",fontSize:13}}>
+                    {avKey?"Hit Refresh to pull live data — or enter a price manually above.":"Set a free API key for live data, or enter the index price manually above."}
                   </div>
-                  <div style={{borderTop:"1px solid #1e1e32",paddingTop:14,marginTop:4}}>
-                    <div style={{fontSize:11,color:"#555570",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Enter S&P 500 price manually</div>
-                    <div style={{display:"flex",gap:10}}>
-                      <input type="number" placeholder="e.g. 5600" value={manualPrice} onChange={e=>setManual(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyManual()} style={{...inp(),flex:1,maxWidth:200}}/>
-                      <button onClick={applyManual} style={btn()}>Apply</button>
-                    </div>
-                    <p style={{marginTop:8,fontSize:11,color:"#444460"}}>Find at <a href="https://finance.yahoo.com/quote/%5EGSPC" target="_blank" style={{color:"#8898cc"}}>finance.yahoo.com</a> — note SPY ≈ S&P 500 ÷ 10</p>
-                  </div>
+                  <p style={{textAlign:"center",fontSize:11,color:"#333350",marginTop:4}}>Find current SPY price at <a href="https://finance.yahoo.com/quote/SPY" target="_blank" style={{color:"#8898cc"}}>finance.yahoo.com</a></p>
                 </div>
               )}
 
@@ -754,35 +935,54 @@ function App(){
                       ))}
                     </div>
                   )}
-                  <div style={{borderTop:"1px solid #1e1e32",paddingTop:14,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,color:"#444460"}}>Update manually:</span>
-                    <input type="number" placeholder="New S&P price" value={manualPrice} onChange={e=>setManual(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyManual()} style={{...inp(),width:160,padding:"7px 12px",fontSize:13}}/>
-                    <button onClick={applyManual} style={btn({padding:"7px 14px",fontSize:12})}>Apply</button>
-                  </div>
                 </div>
               )}
             </div>
 
             {/* Position cards */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-              {card("Break-Even Monthly",totalDrawn>0?fmt(pmt):"—",totalDrawn>0?`at ${state.annualReturn}% p.a. on ${fmt(totalDrawn)} drawn`:"Increases as drawdowns activate","#c9a84c")}
-              {card("Market Drift Since Baseline",
-                market?.changeFromBaseline!=null?fmtPct(market.changeFromBaseline):"—",
-                totalDrawn<=0?"No active drawdowns yet":
-                  market?`${fmt(totalDrawn)} → ${fmt(portfolioNow||0)}`:"Refresh to calculate",
-                totalDrawn<=0?"#555570":market?sc(market.changeFromBaseline):"#555570"
-              )}
-              {card("Portfolio Value (if left in)",
-                portfolioNow!=null?fmt(portfolioNow):(totalDrawn<=0?"—":"Refresh"),
-                totalDrawn<=0?"Awaiting first active drawdown":"What your withdrawals would be worth today",
-                totalDrawn<=0?"#555570":"#8898cc"
-              )}
-              {card("Your Net Position",
-                netPos!=null?fmt(Math.abs(netPos)):totalDrawn<=0?"—":"Refresh market",
-                netPos==null?(totalDrawn<=0?"No active drawdowns yet":"Enter market price above"):
-                  netPos>=0?"✓ Repaid ahead of market value":"✗ Gap to close",
-                netPos==null?"#555570":sc(netPos)
-              )}
+            <div className="position-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+              {/* Break-Even Monthly with tooltip */}
+              <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"16px 14px"}}>
+                <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8,display:"flex",alignItems:"center",gap:0}}>
+                  Break-Even Monthly
+                  <InfoTip text="The monthly repayment needed so your total payments match your investment's expected growth over the chosen term." />
+                </div>
+                <div style={{fontSize:20,color:"#c9a84c",fontFamily:"'DM Mono',monospace",fontWeight:300}}>{totalDrawn>0?fmt(pmt):"—"}</div>
+                <div style={{fontSize:11,color:"#555570",marginTop:4}}>{totalDrawn>0?`at ${state.annualReturn}% p.a. on ${fmt(totalDrawn)} drawn`:"Increases as drawdowns activate"}</div>
+              </div>
+
+              {/* Market Drift with tooltip */}
+              <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"16px 14px"}}>
+                <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8,display:"flex",alignItems:"center",gap:0}}>
+                  Index Drift Since Baseline
+                  <InfoTip text="How much the index has moved since your first price entry. Your baseline is locked in on your first market refresh." />
+                </div>
+                <div style={{fontSize:20,color:totalDrawn<=0?"#555570":market?sc(market.changeFromBaseline):"#555570",fontFamily:"'DM Mono',monospace",fontWeight:300}}>
+                  {market?.changeFromBaseline!=null?fmtPct(market.changeFromBaseline):"—"}
+                </div>
+                <div style={{fontSize:11,color:"#555570",marginTop:4}}>
+                  {totalDrawn<=0?"No active drawdowns yet":market?`${fmt(totalDrawn)} → ${fmt(portfolioNow||0)}`:"Refresh to calculate"}
+                </div>
+              </div>
+
+              <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"16px 14px"}}>
+                <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Portfolio Value (if left in)</div>
+                <div style={{fontSize:20,color:totalDrawn<=0?"#555570":"#8898cc",fontFamily:"'DM Mono',monospace",fontWeight:300}}>
+                  {portfolioNow!=null?fmt(portfolioNow):(totalDrawn<=0?"—":"Refresh")}
+                </div>
+                <div style={{fontSize:11,color:"#555570",marginTop:4}}>{totalDrawn<=0?"Awaiting first active drawdown":"What your withdrawals would be worth today"}</div>
+              </div>
+
+              <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:10,padding:"16px 14px"}}>
+                <div style={{fontSize:10,color:"#555570",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Your Net Position</div>
+                <div style={{fontSize:20,color:netPos==null?"#555570":sc(netPos),fontFamily:"'DM Mono',monospace",fontWeight:300}}>
+                  {netPos!=null?fmt(Math.abs(netPos)):totalDrawn<=0?"—":"Refresh market"}
+                </div>
+                <div style={{fontSize:11,color:"#555570",marginTop:4}}>
+                  {netPos==null?(totalDrawn<=0?"No active drawdowns yet":"Enter market price above"):
+                    netPos>=0?"✓ Repaid ahead of market value":"✗ Gap to close"}
+                </div>
+              </div>
             </div>
 
             {/* Progress bar */}
@@ -804,7 +1004,7 @@ function App(){
               </div>
             )}
 
-            {/* Sharesies referral card */}
+            {/* Referral card */}
             <a href="https://www.sharesies.nz/referrals?token=eyJhbGciOiAiQTI1NktXIiwgImVuYyI6ICJBMjU2R0NNIn0.JtuPhNOGOpuzja1GEn0bPj7OLHgE6pMN5n6WXiTq4DWzrkYM8SM3ZQ.6h4X_9JWDAlv3zWV.XdORU6PfIQHTQzIBWCXCm4jndiqixDWyhZGH_8uYzSgjpHIlRZLyHW3dRVEZudAnCgPj0Gg55oWHWiP1snZr5FngUQSQGYxJN9-SAqNdSsMfaqvH2SpzDZ_LVrVZFtpUn-_qX0b2PRvVMz6m003dy6-txYyyMSdSu7OySl-OMH--KHeOTjOg-8HZEbSJMY4849S0i028TKHyLa2cjgiLHvhOb2h3PvUoWdU.9aMzxCzOGk1pH049R0ASuA"
               target="_blank" rel="noopener noreferrer"
               style={{display:"block",marginTop:16,textDecoration:"none"}}>
@@ -854,6 +1054,8 @@ function App(){
               </div>
             </a>
           </div>
+            )}
+          </>
         )}
 
         {/* ══ CHART ══ */}
@@ -863,7 +1065,7 @@ function App(){
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:6}}>Portfolio vs Repayments Over Time</div>
                 <p style={{fontSize:12,color:"#666688",lineHeight:1.6}}>
-                  Gold = what your total withdrawals would be worth if left in Sharesies each week. Blue dashed = cumulative repayments. When blue meets gold, you've broken even.
+                  Gold = what your total withdrawals would be worth if left in your investment fund. Blue dashed = cumulative repayments. When blue meets gold, you've broken even.
                 </p>
               </div>
               <LineChart history={(state.priceHistory||[]).filter(h=>h.portfolioValue>0)} loanAmount={totalDrawn+totalFuture}/>
@@ -875,7 +1077,7 @@ function App(){
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                     <thead>
                       <tr style={{background:"#111118",position:"sticky",top:0}}>
-                        {["Date","SPY Price","Portfolio Value","Cumulative Repaid","Gap"].map(h=>(
+                        {["Date","Index Price","Portfolio Value","Cumulative Repaid","Gap"].map(h=>(
                           <th key={h} style={{padding:"10px 14px",textAlign:"right",color:"#444460",fontWeight:400,fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase"}}>{h}</th>
                         ))}
                       </tr>
@@ -919,7 +1121,7 @@ function App(){
             {ledgerTab==="drawdowns"&&(
               <div>
                 <div style={{background:"#1a1a2e",border:"1px solid #e0606033",borderRadius:12,padding:20,marginBottom:16}}>
-                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#e06060",textTransform:"uppercase",marginBottom:14}}>Log a Drawdown — Money Out of Sharesies</div>
+                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#e06060",textTransform:"uppercase",marginBottom:14}}>Log a Drawdown — Money Out of Your Investment Fund</div>
                   <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
                     <div style={{flex:1,minWidth:120,position:"relative"}}>
                       <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#666",fontSize:14}}>$</span>
@@ -996,7 +1198,7 @@ function App(){
             {ledgerTab==="repayments"&&(
               <div>
                 <div style={{background:"#1a1a2e",border:"1px solid #60c08033",borderRadius:12,padding:20,marginBottom:16}}>
-                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#60c080",textTransform:"uppercase",marginBottom:14}}>Log a Repayment — Money Back to Sharesies</div>
+                  <div style={{fontSize:10,letterSpacing:"0.2em",color:"#60c080",textTransform:"uppercase",marginBottom:14}}>Log a Repayment — Money Back to Your Investment Fund</div>
                   <div style={{marginBottom:10,fontSize:12,color:"#444460"}}>
                     Break-even amount: <span style={{color:"#c9a84c",fontFamily:"'DM Mono',monospace"}}>{fmt(pmt)}/month</span>
                     {totalDrawn<=0&&<span style={{color:"#555570"}}> — add a drawdown first</span>}
@@ -1074,14 +1276,17 @@ function App(){
                 </div>
               ))}
               <div style={{background:"#111118",borderRadius:8,padding:"14px",fontSize:12,color:"#8888aa",lineHeight:1.7}}>
-                <strong style={{color:"#c9a84c"}}>Note:</strong> Loan amount is now driven by your Drawdowns ledger — there's no fixed amount to set here. Add each withdrawal in the Ledger tab and the break-even payment updates automatically.
+                <strong style={{color:"#c9a84c"}}>Note:</strong> Loan amount is driven by your Drawdowns ledger — there's no fixed amount to set here. Add each withdrawal in the Ledger tab and the break-even payment updates automatically.
               </div>
             </div>
 
             <div style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:12,padding:22,marginBottom:16}}>
-              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:14}}>S&P 500 Baseline</div>
+              <div style={{fontSize:10,letterSpacing:"0.2em",color:"#c9a84c",textTransform:"uppercase",marginBottom:6,display:"flex",alignItems:"center",gap:0}}>
+                Index Baseline
+                <InfoTip text="Locked in on your first market refresh. All drift calculations compare the current index price against this starting point." />
+              </div>
               <p style={{fontSize:12,color:"#8888aa",marginBottom:14,lineHeight:1.7}}>
-                Locked in on your first market refresh. All drift calculations compare current SPY price against this starting point.
+                Locked in on your first market refresh. All drift calculations compare current price against this starting point.
               </p>
               <div style={{fontSize:24,color:"#c9a84c",fontFamily:"'DM Mono',monospace",fontWeight:300,marginBottom:14}}>
                 {state.sp500Baseline?state.sp500Baseline.toLocaleString("en-US",{maximumFractionDigits:2}):"Not set yet"}
@@ -1168,11 +1373,7 @@ function App(){
       </div>
 
       <div style={{borderTop:"1px solid #1a1a2e",padding:"20px 24px 24px",textAlign:"center"}}>
-
-        {/* Sharesies + BMC row */}
         <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:24,flexWrap:"wrap",marginBottom:14}}>
-
-          {/* Sharesies referral */}
           <a href="https://www.sharesies.nz/referrals?token=eyJhbGciOiAiQTI1NktXIiwgImVuYyI6ICJBMjU2R0NNIn0.JtuPhNOGOpuzja1GEn0bPj7OLHgE6pMN5n6WXiTq4DWzrkYM8SM3ZQ.6h4X_9JWDAlv3zWV.XdORU6PfIQHTQzIBWCXCm4jndiqixDWyhZGH_8uYzSgjpHIlRZLyHW3dRVEZudAnCgPj0Gg55oWHWiP1snZr5FngUQSQGYxJN9-SAqNdSsMfaqvH2SpzDZ_LVrVZFtpUn-_qX0b2PRvVMz6m003dy6-txYyyMSdSu7OySl-OMH--KHeOTjOg-8HZEbSJMY4849S0i028TKHyLa2cjgiLHvhOb2h3PvUoWdU.9aMzxCzOGk1pH049R0ASuA"
             target="_blank" rel="noopener noreferrer"
             style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:11,color:"#EF496F",textDecoration:"none",opacity:0.75,transition:"opacity 0.15s"}}
@@ -1184,7 +1385,6 @@ function App(){
 
           <span style={{color:"#2a2a40",fontSize:11}}>·</span>
 
-          {/* Buy Me a Coffee */}
           <div style={{display:"inline-flex",alignItems:"center",gap:10}}>
             <a href="https://buymeacoffee.com/inspiro"
               target="_blank" rel="noopener noreferrer"
@@ -1203,10 +1403,8 @@ function App(){
                 style={{width:44,height:44,borderRadius:4,display:"block"}}/>
             </a>
           </div>
-
         </div>
-
-        <p style={{fontSize:10,color:"#222238"}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice</p>
+        <p style={{fontSize:10,color:"#222238"}}>Data stored locally · Free market data via Alpha Vantage · Not financial advice · Inspiro</p>
       </div>
     </div>
   );
