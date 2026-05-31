@@ -29,12 +29,23 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Install Playwright browser
-        run: npx playwright install chromium
-      - name: Install Chromium system dependencies
-        run: npx playwright install-deps chromium
-        continue-on-error: true
+
+      - name: Remove stale PPAs that block apt-get update
+        # The deadsnakes and ondrej/php PPAs return 403 on this runner and
+        # cause 'apt-get update' (run internally by playwright install-deps)
+        # to exit non-zero, preventing Chromium system libs from installing.
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/deadsnakes*.list \
+                     /etc/apt/sources.list.d/ondrej*.list \
+                     /etc/apt/sources.list.d/*deadsnakes* \
+                     /etc/apt/sources.list.d/*ondrej* || true
+          sudo apt-get update -qq 2>&1 | grep -v "^W:" || true
+
+      - name: Install Playwright browser and system dependencies
+        run: npx playwright install --with-deps chromium
+
       - run: npm run test:e2e
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
