@@ -1,7 +1,35 @@
 import { test, expect } from '@playwright/test';
+import { join } from 'path';
+
+// CDN URLs used by index.html — intercepted and served from local node_modules
+// so tests work offline and are not subject to CDN latency or rate-limits.
+const ROOT = process.cwd();
+const CDN_ROUTES = [
+  {
+    pattern: 'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js',
+    localPath: join(ROOT, 'node_modules/react/umd/react.production.min.js'),
+    contentType: 'application/javascript',
+  },
+  {
+    pattern: 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js',
+    localPath: join(ROOT, 'node_modules/react-dom/umd/react-dom.production.min.js'),
+    contentType: 'application/javascript',
+  },
+  {
+    pattern: 'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js',
+    localPath: join(ROOT, 'node_modules/@babel/standalone/babel.min.js'),
+    contentType: 'application/javascript',
+  },
+  // Stub Google Fonts — fonts are cosmetic, not required for functionality
+  {
+    pattern: 'https://fonts.googleapis.com/**',
+    localPath: null,
+    contentType: 'text/css',
+    body: '',
+  },
+];
 
 // Wait for React/Babel to compile and render into #root.
-// Babel standalone can take a few seconds on first load.
 async function waitForApp(page) {
   await page.waitForFunction(
     () => {
@@ -12,8 +40,20 @@ async function waitForApp(page) {
   );
 }
 
+// Intercept CDN requests before page load, then navigate and wait for render.
+async function setupPage(page) {
+  for (const { pattern, localPath, contentType, body } of CDN_ROUTES) {
+    await page.route(pattern, route =>
+      route.fulfill(
+        localPath ? { path: localPath, contentType } : { body: body ?? '', contentType }
+      )
+    );
+  }
+}
+
 // Clear localStorage before each test so tests are isolated
 test.beforeEach(async ({ page }) => {
+  await setupPage(page);
   await page.goto('/');
   await waitForApp(page);
   await page.evaluate(() => localStorage.clear());

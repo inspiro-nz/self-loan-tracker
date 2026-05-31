@@ -10,8 +10,11 @@
     "serve": "npx serve . -p 4173 -s"
   },
   "devDependencies": {
+    "@babel/standalone": "7.23.2",
     "@playwright/test": "^1.44.0",
     "@vitest/coverage-v8": "^1.6.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
     "serve": "^14.2.3",
     "vitest": "^1.6.0"
   }
