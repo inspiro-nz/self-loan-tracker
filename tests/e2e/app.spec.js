@@ -87,7 +87,7 @@ test('dashboard reflects total drawn', async ({ page }) => {
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
 
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click();
-  await expect(page.locator('text=/20[,.]?000/')).toBeVisible();
+  await expect(page.getByText(/20[,.]?000/).first()).toBeVisible();
 });
 
 // ── Chart tab ────────────────────────────────────────────────────────────────
@@ -99,8 +99,8 @@ test('chart tab shows empty state when no history', async ({ page }) => {
 // ── Settings tab ─────────────────────────────────────────────────────────────
 test('settings tab has export and import', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Export/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Import/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Export Backup/i })).toBeVisible();
+  await expect(page.getByText('⬆ Import Backup (JSON)')).toBeVisible();
 });
 
 // ── FAQ tab ───────────────────────────────────────────────────────────────────
