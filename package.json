@@ -1,0 +1,21 @@
+{
+  "name": "self-loan-tracker",
+  "version": "1.0.0",
+  "description": "Self-Loan Tracker — automated test harness",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "serve": "npx serve . -p 4173 -s"
+  },
+  "devDependencies": {
+    "@babel/standalone": "7.23.2",
+    "@playwright/test": "^1.44.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "serve": "^14.2.3",
+    "vitest": "^1.6.0"
+  }
+}
