@@ -25,7 +25,7 @@ test('page loads with correct title', async ({ page }) => {
 });
 
 test('header shows app name', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'Self-Loan Tracker' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Self-Loan Tracker', exact: true })).toBeVisible();
 });
 
 // ── Welcome / onboarding ──────────────────────────────────────────────────────
@@ -36,31 +36,31 @@ test('shows welcome screen when no data', async ({ page }) => {
 // ── Tab navigation ────────────────────────────────────────────────────────────
 test('all navigation tabs are present', async ({ page }) => {
   for (const tab of ['Dashboard', 'Chart', 'Ledger', 'Settings', 'FAQ']) {
-    await expect(page.getByRole('button', { name: tab })).toBeVisible();
+    await expect(page.getByRole('button', { name: tab, exact: true })).toBeVisible();
   }
 });
 
 // ── Ledger — drawdowns ────────────────────────────────────────────────────────
 test('can add a drawdown entry', async ({ page }) => {
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await page.locator('input[type="number"]').first().fill('5000');
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
   await expect(page.locator('td').filter({ hasText: /5[,.]?000/ }).first()).toBeVisible();
 });
 
 test('drawdown persists after page reload', async ({ page }) => {
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await page.locator('input[type="number"]').first().fill('7500');
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
 
   await page.reload();
   await waitForApp(page);
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await expect(page.locator('td').filter({ hasText: /7[,.]?500/ }).first()).toBeVisible();
 });
 
 test('can delete a drawdown entry', async ({ page }) => {
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await page.locator('input[type="number"]').first().fill('3000');
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
   await expect(page.locator('td').filter({ hasText: /3[,.]?000/ }).first()).toBeVisible();
@@ -70,7 +70,7 @@ test('can delete a drawdown entry', async ({ page }) => {
 
 // ── Ledger — repayments ───────────────────────────────────────────────────────
 test('can add a repayment entry', async ({ page }) => {
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await page.locator('input[type="number"]').first().fill('10000');
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
 
@@ -82,36 +82,36 @@ test('can add a repayment entry', async ({ page }) => {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 test('dashboard reflects total drawn', async ({ page }) => {
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await page.locator('input[type="number"]').first().fill('20000');
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
 
-  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await page.getByRole('button', { name: 'Dashboard', exact: true }).click();
   await expect(page.locator('text=/20[,.]?000/')).toBeVisible();
 });
 
 // ── Chart tab ────────────────────────────────────────────────────────────────
 test('chart tab shows empty state when no history', async ({ page }) => {
-  await page.getByRole('button', { name: 'Chart' }).click();
+  await page.getByRole('button', { name: 'Chart', exact: true }).click();
   await expect(page.getByText('Chart builds as you go')).toBeVisible();
 });
 
 // ── Settings tab ─────────────────────────────────────────────────────────────
 test('settings tab has export and import', async ({ page }) => {
-  await page.getByRole('button', { name: 'Settings' }).click();
-  await expect(page.getByText(/export/i)).toBeVisible();
-  await expect(page.getByText(/import/i)).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Export/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Import/i })).toBeVisible();
 });
 
 // ── FAQ tab ───────────────────────────────────────────────────────────────────
 test('FAQ tab renders questions', async ({ page }) => {
-  await page.getByRole('button', { name: 'FAQ' }).click();
+  await page.getByRole('button', { name: 'FAQ', exact: true }).click();
   await expect(page.getByText('What is a self-loan?')).toBeVisible();
 });
 
 // ── localStorage integrity ────────────────────────────────────────────────────
 test('localStorage contains valid data model after adding drawdown', async ({ page }) => {
-  await page.getByRole('button', { name: 'Ledger' }).click();
+  await page.getByRole('button', { name: 'Ledger', exact: true }).click();
   await page.locator('input[type="number"]').first().fill('5000');
   await page.getByRole('button', { name: /Add Drawdown/i }).click();
 
